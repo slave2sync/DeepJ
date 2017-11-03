@@ -12,6 +12,12 @@ from util import create_env
 from model import ActorCritic
 from torch.autograd import Variable
 
+num_steps = 32
+# Discount factor
+gamma = 0.99
+# GAE parameter
+tau = 1.00
+
 def train(env, model):
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
@@ -26,12 +32,12 @@ def train(env, model):
 
     while True:
         episode_length += 1
-        # Sync with the shared model
-        model.load_state_dict(model.state_dict())
+        
         if done:
             memory = None
         else:
             memory = tuple(Variable(x.data) for x in memory)
+        
         # Pick a new noise vector (until next optimisation step)
         model.sample_noise()
 
@@ -39,16 +45,13 @@ def train(env, model):
         log_probs = []
         rewards = []
 
-        for step in range(args.num_steps):
+        for step in range(num_steps):
             value, logit, memory = model((Variable(state.unsqueeze(0)), memory))
             prob = F.softmax(logit)
             log_prob = F.log_softmax(logit)
-            # entropy = -(log_prob * prob).sum(1)
-            # entropies.append(entropy)
 
             action = prob.multinomial().data
             log_prob = log_prob.gather(1, Variable(action))
-
 
             state, reward, done, _ = env.step(action.numpy()[0])
 
@@ -82,21 +85,19 @@ def train(env, model):
         rewards /= reward_std if reward_std != 0 else 1
 
         for i in reversed(range(len(rewards))):
-            R = args.gamma * R + rewards[i]
+            R = gamma * R + rewards[i]
             advantage = R - values[i]
             value_loss += 0.5 * advantage.pow(2)
 
             # Generalized Advantage Estimataion
-            delta_t = rewards[i] + args.gamma * \
+            delta_t = rewards[i] + gamma * \
                 values[i + 1].data - values[i].data
-            gae = gae * args.gamma * args.tau + delta_t
+            gae = gae * gamma * tau + delta_t
 
             policy_loss -= log_probs[i] * Variable(gae)
-            # TODO: Remove entropy?
-        optimizer.zero_grad()
 
         (policy_loss + 0.5 * value_loss).backward()
         torch.nn.utils.clip_grad_norm(model.parameters(), 40)
 
-        ensure_shared_grads(model, model)
         optimizer.step()
+        optimizer.zero_grad()
