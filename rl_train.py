@@ -7,6 +7,7 @@ import numpy as np
 import argparse
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import itertools
 
 import torch
 import torch.nn.functional as F
@@ -22,7 +23,9 @@ discount = 0.99
 # GAE parameter
 tau = 1.00
 
-min_num_steps = 4
+min_num_steps = 3
+
+val_steps = 10
 
 def g_rollout(model, num_steps):
     """
@@ -119,10 +122,12 @@ def d_train(discriminator, optimizer, fake_seqs, real_seqs):
 
     # Create classes the first half the batch are fake = 0. Second half are real = 1.
     targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
-    accuracy = (outputs.round() == targets).sum().data[0] / (BATCH_SIZE * 2)
+
+    probs = F.sigmoid(outputs)
+    accuracy = (probs.round() == targets).sum().data[0] / (BATCH_SIZE * 2)
 
     # TODO: Log prob or prob?
-    reward = var(torch.log(F.sigmoid(outputs[:BATCH_SIZE])).data)
+    reward = var(torch.log(probs[:BATCH_SIZE]).data)
 
     loss = criterion(outputs, targets)
     loss.backward()
@@ -139,13 +144,13 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
     with tqdm() as tq:
         epoch = 0
         running_reward = 0
+        mle_loss = 0
         mle_losses = []
         all_rewards = []
         all_accs = []
 
-        for data in train_gen:
+        for real_seqs, styles in train_gen:
             epoch += 1
-            real_seqs, styles = data
 
             target_steps = min_num_steps
 
@@ -161,27 +166,29 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
             real_seqs = real_seqs[:, :num_steps]
             accuracy, reward = d_train(discriminator, d_opt, fake_seqs, real_seqs)
 
-            # Train the generator
-            avg_reward = g_train(generator, g_opt, values, log_probs, entropies, reward, num_steps)
+            if accuracy > 0.5:
+                # Train the generator (if the discriminator is decent)
+                avg_reward = g_train(generator, g_opt, values, log_probs, entropies, reward, num_steps)
 
-            if epoch == 1:
-                running_reward = avg_reward
-            else:
-                running_reward = avg_reward * 0.01 + running_reward * 0.99
+                if epoch == 1:
+                    running_reward = avg_reward
+                else:
+                    running_reward = avg_reward * 0.01 + running_reward * 0.99
 
-            # Statistic
-            # mle_loss = compute_mle_loss(generator, data)
-            # mle_losses.append(mle_loss)
-
-            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=accuracy)#, loss=mle_loss)
+            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=accuracy, loss=mle_loss)
             tq.update(1)
 
-            if epoch % 1000 == 0:
+            if epoch % 500 == 0:
+                # Statistic
+                mle_loss = sum(compute_mle_loss(generator, data) for data in  itertools.islice(val_generator(), val_steps)) / val_steps
+                mle_losses.append(mle_loss)
                 all_rewards.append(avg_reward)
                 all_accs.append(accuracy)
                 plot_loss(all_rewards, 'reward')
                 plot_loss(all_accs, 'accuracy')
-                
+                plot_loss(mle_losses, 'mle_loss')
+
+            if epoch % 10000 == 0:
                 # Save model
                 torch.save(generator.state_dict(), OUT_DIR + '/generator_' + str(epoch) + '.pt')
                 torch.save(discriminator.state_dict(), OUT_DIR + '/discriminator_' + str(epoch) + '.pt')
@@ -206,12 +213,12 @@ def compute_mle_loss(generator, data):
     # Feed it to the model
     inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=True)
     targets = var(note_seq[:, 1:], volatile=True)
-    output, states = generator(inputs, styles, None)
+    _, output, _ = generator(inputs, styles, None)
 
     # Compute the loss.
-    loss = criterion(output.view(-1, NUM_ACTIONS), targets.view(-1))
+    loss = criterion(output.contiguous().view(-1, NUM_ACTIONS), targets.view(-1))
 
-    return loss
+    return loss.data[0]
 
 def main():
     parser = argparse.ArgumentParser(description='Trains model')
@@ -226,6 +233,8 @@ def main():
     discriminator = DeepJD()
 
     if torch.cuda.is_available():
+        # TODO
+        torch.backends.cudnn.enabled = False
         generator.cuda()
         discriminator.cuda()
 
