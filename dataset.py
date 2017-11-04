@@ -88,7 +88,8 @@ def sampler(data, seq_len=SEQ_LEN):
     r = list(range(len(seqs)))
     random.shuffle(r)
 
-    for seq_id in r:
+    while True:
+        seq_id = random.randint(0, len(r) - 1)
         yield (
             gen_to_tensor(augment(random_subseq(seqs[seq_id], seq_len))),
             # Need to retain the tensor object. Hence slicing is used.

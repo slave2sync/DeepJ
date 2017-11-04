@@ -6,22 +6,23 @@ from constants import *
 from util import *
 import numpy as np
 
-class DeepJ(nn.Module):
+class DeepJG(nn.Module):
     """
     The DeepJ neural network model architecture.
     """
-    def __init__(self, num_units=512, num_layers=3, style_units=32):
+    def __init__(self, num_actions=NUM_ACTIONS, num_units=512, num_layers=3, style_units=32):
         super().__init__()
         self.num_units = num_units
+        self.num_actions = num_actions
         self.num_layers = num_layers
         self.style_units = style_units
 
         # Project input into distributed representation
-        self.input_linear = nn.Linear(NUM_ACTIONS, self.num_units)
+        self.input_linear = nn.Linear(num_actions, self.num_units)
         # Project style into distributed representation
         self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
         # Output layer
-        self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS + 1)
+        self.output_linear = nn.Linear(self.num_units, num_actions + 1)
 
         self.layers = [RNNLayer(self.num_units, self.num_units) for i in range(num_layers)]
 
@@ -55,19 +56,51 @@ class DeepJ(nn.Module):
         """ Returns the probability of outputs """
         _, x, states = self.forward(x, style, states)
         seq_len = x.size(1)
-        x = x.view(-1, NUM_ACTIONS)
+        x = x.view(-1, self.num_actions)
         x = F.softmax(x / temperature)
-        x = x.view(-1, seq_len, NUM_ACTIONS)
+        x = x.view(-1, seq_len, self.num_actions)
         return x, states
 
 class DeepJD(nn.Module):
     """
-    The DeepJ discriminator neural network model architecture.
+    The DeepJ neural network model architecture.
     """
-    def __init__(self, num_units=512, num_layers=3, style_units=32):
+    def __init__(self, num_actions=NUM_ACTIONS, num_units=512, num_layers=2, style_units=32):
         super().__init__()
-        # TODO:
+        self.num_units = num_units
+        self.num_actions = num_actions
+        self.num_layers = num_layers
+        self.style_units = style_units
 
+        # Project input into distributed representation
+        self.input_linear = nn.Linear(num_actions, self.num_units)
+        # Project style into distributed representation
+        self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
+        # Output layer
+        self.output_linear = nn.Linear(self.num_units, 1)
+
+        self.layers = [RNNLayer(self.num_units, self.num_units) for i in range(num_layers)]
+
+        for i, layer in enumerate(self.layers):
+            self.add_module('rnn_layer_' + str(i), layer)
+
+    def forward(self, x, style, states=None):
+        # Distributed input representation
+        x = F.tanh(self.input_linear(x))
+        # Distributed style representation
+        # style = F.tanh(self.style_linear(style))
+
+        # Initialize state
+        if states is None:
+            states = [None for _ in range(self.num_layers)]
+
+        for l, (layer, state) in enumerate(zip(self.layers, states)):
+            x, states[l] = layer(x, style, state)
+
+        # Only consider last time step
+        x = x[:, -1, :]
+        x = self.output_linear(x)
+        return x, states
 
 class RNNLayer(nn.Module):
     """

@@ -1,7 +1,7 @@
 import math
 import os
 import sys
-
+import random
 import math
 import numpy as np
 import argparse
@@ -13,16 +13,17 @@ import torch.optim as optim
 
 from dataset import *
 from constants import *
-from model import DeepJ
+from model import *
 from torch.autograd import Variable
 
-num_steps = 8
 # Discount factor
 discount = 0.99
 # GAE parameter
 tau = 1.00
 
-def g_rollout(model):
+min_num_steps = 4
+
+def g_rollout(model, num_steps):
     """
     Rollout a sequence
     """
@@ -65,60 +66,107 @@ def g_rollout(model):
         log_probs.append(log_prob)
     return states, values, log_probs, entropies
 
-def g_train(model, optimizer, plot, gen_rate):
+def g_train(generator, optimizer, num_steps):
+    generator.train()
+    optimizer.zero_grad()
+    # Perform a rollout #
+    states, values, log_probs, entropies = g_rollout(generator, num_steps)
+
+    # Finished sequence generation. Now compute rewards!
+    # TODO: Simple reward scheme
+    R = var(torch.zeros(BATCH_SIZE, 1))
+
+    for state in states:
+        for i, b in enumerate(state):
+            if b[0] == state[i - 1][0] + 1:
+                R[i, 0] = R[i, 0] + 1
+
+    values.append(R)
+
+    policy_loss = 0
+    value_loss = 0
+
+    gae = var(torch.zeros(BATCH_SIZE, 1))
+
+    # Standardize rewards
+    mean_rewards = R.mean()
+    std_rewards = R.std()
+    R -= mean_rewards
+    if std_rewards.data[0] != 0:
+        R /= std_rewards
+
+    for i in reversed(range(num_steps)):
+        R = discount * R
+        advantage = R - values[i]
+        value_loss += 0.5 * advantage.pow(2)
+
+        # Generalized Advantage Estimataion
+        delta_t = discount * values[i + 1] - values[i]
+        gae = gae * discount * tau + delta_t
+        # TODO: Need entropy?
+        policy_loss -= log_probs[i] * gae + 0.01 * entropies[i]
+
+    loss = torch.sum(policy_loss + 0.5 * value_loss)
+    loss.backward()
+    # TODO: Tune gradient clipping parameter?
+    torch.nn.utils.clip_grad_norm(generator.parameters(), GRADIENT_CLIP)
+
+    optimizer.step()
+    return mean_rewards.data[0], states
+
+def d_train(discriminator, optimizer, fake_seqs, real_seqs):
+    optimizer.zero_grad()
+    criterion = nn.BCEWithLogitsLoss()
+
+    fake_seqs = one_hot_seq(torch.cat(fake_seqs, dim=1), NUM_ACTIONS)
+    real_seqs = one_hot_seq(real_seqs, NUM_ACTIONS)
+    input_batch = var(torch.cat((fake_seqs, real_seqs), dim=0))
+    outputs, _ = discriminator(input_batch, None)
+
+    # Create classes the first half the batch are fake = 0. Second half are real = 1.
+    targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
+    accuracy = (outputs.round() == targets).sum().data[0] / (BATCH_SIZE * 2)
+
+    loss = criterion(outputs, targets)
+    loss.backward()
+
+    optimizer.step()
+    return accuracy
+
+def train(generator, discriminator, train_generator, val_generator, plot, gen_rate):
+    # Construct optimizer
+    g_opt = optim.Adam(generator.parameters(), lr=LEARNING_RATE)
+    d_opt = optim.Adam(discriminator.parameters(), lr=LEARNING_RATE)
+    train_gen = train_generator()
+
     with tqdm() as tq:
+        iteration = 0
         running_reward = 0
 
-        while True:
-            model.train()
-            optimizer.zero_grad()
-            # Perform a rollout #
-            states, values, log_probs, entropies = g_rollout(model)
+        for real_seqs, styles in train_gen:
+            iteration += 1
 
-            # Finished sequence generation. Now compute rewards!
-            # TODO: Simple reward scheme
-            R = var(torch.zeros(BATCH_SIZE, 1))
+            target_steps = min_num_steps
 
-            for state in states[1:]:
-                for i, b in enumerate(state):
-                    if b[0] > state[i - 1][0]:
-                        R[i, 0] = 1
+            # Gradually increase the number of steps
+            # TODO: Raise sequence length bounds
+            target_steps = min(max(int(running_reward * SEQ_LEN), min_num_steps), SEQ_LEN)
+            num_steps = random.randint(min_num_steps, target_steps)
 
-            values.append(R)
+            # Train the generator
+            avg_reward, fake_seqs = g_train(generator, g_opt, num_steps)
+            # Train the discriminator
+            real_seqs = real_seqs[:, :num_steps]
+            accuracy = d_train(discriminator, d_opt, fake_seqs, real_seqs)
 
-            policy_loss = 0
-            value_loss = 0
+            if iteration == 1:
+                running_reward = avg_reward
+            else:
+                running_reward = avg_reward * 0.01 + running_reward * 0.99
 
-            gae = var(torch.zeros(BATCH_SIZE, 1))
-
-            # Standardize rewards
-            mean_rewards = R.mean()
-            std_rewards = R.std()
-            R -= mean_rewards
-            if std_rewards.data[0] != 0:
-                R /= std_rewards
-
-            for i in reversed(range(num_steps)):
-                R = discount * R
-                advantage = R - values[i]
-                value_loss += 0.5 * advantage.pow(2)
-
-                # Generalized Advantage Estimataion
-                delta_t = discount * values[i + 1] - values[i]
-                gae = gae * discount * tau + delta_t
-                # TODO: Need entropy?
-                policy_loss -= log_probs[i] * gae + 0.01 * entropies[i]
-
-            loss = torch.sum(policy_loss + 0.5 * value_loss)
-            loss.backward()
-            # TODO: Tune gradient clipping parameter?
-            torch.nn.utils.clip_grad_norm(model.parameters(), GRADIENT_CLIP)
-
-            optimizer.step()
-
-            running_reward = mean_rewards.data[0] * 0.01 + running_reward * 0.99
-            tq.set_postfix(loss=loss.data[0], reward=running_reward)
+            tq.set_postfix(len=num_steps, reward=running_reward, d_acc=accuracy)
             tq.update(BATCH_SIZE)
+
 def main():
     parser = argparse.ArgumentParser(description='Trains model')
     parser.add_argument('--path', help='Load existing model?')
@@ -128,17 +176,16 @@ def main():
 
     print('=== Loading Model ===')
     print('GPU: {}'.format(torch.cuda.is_available()))
-    model = DeepJ()
+    generator = DeepJG()
+    discriminator = DeepJD()
 
     if torch.cuda.is_available():
-        model.cuda()
+        generator.cuda()
+        discriminator.cuda()
 
     if args.path:
-        model.load_state_dict(torch.load(args.path))
+        generator.load_state_dict(torch.load(args.path))
         print('Restored model from checkpoint.')
-
-    # Construct optimizer
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     print()
 
@@ -162,7 +209,7 @@ def main():
     print()
 
     print('=== Training ===')
-    g_train(model, optimizer, plot=not args.noplot, gen_rate=args.gen)
+    train(generator, discriminator, train_generator, val_generator, plot=not args.noplot, gen_rate=args.gen)
 
 if __name__ == '__main__':
     main()
