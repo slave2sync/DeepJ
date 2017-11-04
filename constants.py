@@ -22,7 +22,7 @@ NUM_ACTIONS = VEL_OFFSET + VEL_QUANTIZATION
 
 # Trainin Parameters
 BATCH_SIZE = 64
-MIN_SEQ_LEN = 3
+MIN_SEQ_LEN = 1
 SEQ_LEN = 512 + 1
 # Maximum silence time in seconds
 SILENT_LENGTH = 3
@@ -31,7 +31,7 @@ G_LR = 1e-3 / 2
 D_LR = 1e-3
 # Minimum number of epochs before leveling up cirriculum
 MIN_EPOCH_CL = 500
-CL_THRESHOLD = 0.6
+CL_THRESHOLD = 0.5
 D_OPT_MAX_ACC = 0.9
 G_OPT_MIN_ACC = 0.5
 RUNNING_RATIO = 0.99
@@ -40,7 +40,7 @@ DISCOUNT = 0.99
 # GAE parameter
 TAU = 1.00
 # Number of batches to validate against
-VAL_STEPS = 10
+VAL_STEPS = 3
 
 
 # Style

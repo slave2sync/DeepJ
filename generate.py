@@ -4,6 +4,7 @@ import heapq
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 from tqdm import trange
 
@@ -11,7 +12,7 @@ from midi_io import *
 from dataset import *
 from constants import *
 from util import *
-from model import DeepJ
+from model import *
 
 class Generation():
     """
@@ -113,7 +114,7 @@ def main():
     print('GPU: {}'.format(torch.cuda.is_available()))
     settings['force_cpu'] = True
     
-    model = DeepJ()
+    model = DeepJG()
 
     if args.path:
         model.load_state_dict(torch.load(args.path))

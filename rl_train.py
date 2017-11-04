@@ -17,6 +17,7 @@ from dataset import *
 from constants import *
 from model import *
 from torch.autograd import Variable
+from generate import Generation
 
 def g_rollout(model, num_steps):
     """
@@ -161,8 +162,8 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
             fake_seqs, values, log_probs = g_rollout(generator, num_steps)
 
             # Train the discriminator (and compute rewards)
-            # We don't train the generator if it is too good
             real_seqs = real_seqs[:, :num_steps]
+            # We don't train the generator if it is too good. Let G catch up.
             optimize = running_acc is None or running_acc < D_OPT_MAX_ACC
             accuracy, reward, entropy = d_train(discriminator, d_opt, fake_seqs, real_seqs, optimize)
             running_entropy = accumulate_running(running_entropy, entropy)
@@ -176,7 +177,7 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
             tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, loss=mle_loss, entropy=running_entropy)
             tq.update(1)
 
-            if epoch % 500 == 0:
+            if epoch % 200 == 0:
                 # Statistic
                 mle_loss = sum(compute_mle_loss(generator, data) for data in  itertools.islice(val_generator(), VAL_STEPS)) / VAL_STEPS
                 mle_losses.append(mle_loss)
@@ -188,10 +189,12 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
                     plot_loss(all_accs, 'accuracy')
                     plot_loss(mle_losses, 'mle_loss')
 
-            if epoch % 10000 == 0:
+            if epoch % 2000 == 0:
                 # Save model
                 torch.save(generator.state_dict(), OUT_DIR + '/generator_' + str(epoch) + '.pt')
                 torch.save(discriminator.state_dict(), OUT_DIR + '/discriminator_' + str(epoch) + '.pt')
+                # Generate an output sequence
+                Generation(generator).export(name='epoch_' + str(epoch))
 
 def plot_loss(validation_loss, name):
     # Draw graph
