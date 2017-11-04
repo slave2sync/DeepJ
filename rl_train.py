@@ -151,7 +151,7 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
 
             # Gradually increase the number of steps
             # TODO: Raise sequence length bounds
-            target_steps = min(epoch // 1e6 + min_num_steps, SEQ_LEN)
+            target_steps = min(epoch // 1e5 + min_num_steps, SEQ_LEN)
             num_steps = random.randint(min_num_steps, target_steps)
 
             # Perform a rollout #
@@ -174,17 +174,17 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
             # mle_losses.append(mle_loss)
 
             tq.set_postfix(len=target_steps, reward=running_reward, d_acc=accuracy)#, loss=mle_loss)
-            tq.update(BATCH_SIZE)
+            tq.update(1)
 
             if epoch % 1000 == 0:
-                # Save model
-                torch.save(generator.state_dict(), OUT_DIR + '/generator_' + str(epoch) + '.pt')
-                torch.save(discriminator.state_dict(), OUT_DIR + '/discriminator_' + str(epoch) + '.pt')
-
                 all_rewards.append(avg_reward)
                 all_accs.append(accuracy)
                 plot_loss(all_rewards, 'reward')
                 plot_loss(all_accs, 'accuracy')
+                
+                # Save model
+                torch.save(generator.state_dict(), OUT_DIR + '/generator_' + str(epoch) + '.pt')
+                torch.save(discriminator.state_dict(), OUT_DIR + '/discriminator_' + str(epoch) + '.pt')
 
 def plot_loss(validation_loss, name):
     # Draw graph
