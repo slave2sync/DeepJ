@@ -4,6 +4,12 @@ import torch
 from torch.autograd import Variable
 from constants import *
 
+def accumulate_running(accumulator, new):
+    if accumulator is None:
+        return new
+
+    return new * (1 - RUNNING_RATIO) + accumulator * RUNNING_RATIO
+
 def gen_to_tensor(generator):
     """ Converts a generator into a Torch LongTensor """
     return torch.LongTensor(list(generator))

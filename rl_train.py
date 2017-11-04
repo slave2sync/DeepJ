@@ -80,15 +80,15 @@ def g_train(generator, optimizer, values, log_probs, entropies, R, num_steps):
         R /= std_rewards
 
     for i in reversed(range(num_steps)):
-        R = discount * R
+        R = DISCOUNT * R
         advantage = R - values[i]
         value_loss += 0.5 * advantage.pow(2)
 
         # Generalized Advantage Estimataion
-        delta_t = discount * values[i + 1] - values[i]
-        gae = gae * discount * tau + delta_t
+        delta_t = DISCOUNT * values[i + 1] - values[i]
+        gae = gae * DISCOUNT * TAU + delta_t
         # TODO: Need entropy?
-        policy_loss -= log_probs[i] * gae + 0.01 * entropies[i]
+        policy_loss -= log_probs[i] * gae# + 0.01 * entropies[i]
 
     loss = torch.sum(policy_loss + 0.5 * value_loss)
     loss.backward()
@@ -98,7 +98,7 @@ def g_train(generator, optimizer, values, log_probs, entropies, R, num_steps):
     optimizer.step()
     return mean_rewards.data[0]
 
-def d_train(discriminator, optimizer, fake_seqs, real_seqs):
+def d_train(discriminator, optimizer, fake_seqs, real_seqs, optimize=True):
     """
     Trains the generator
     """
@@ -120,16 +120,17 @@ def d_train(discriminator, optimizer, fake_seqs, real_seqs):
     # TODO: Log prob or prob?
     reward = var(torch.log(probs[:BATCH_SIZE]).data)
 
-    loss = criterion(outputs, targets)
-    loss.backward()
+    if optimize:
+        loss = criterion(outputs, targets)
+        loss.backward()
 
-    optimizer.step()
+        optimizer.step()
     return accuracy, reward
 
-def train(generator, discriminator, train_generator, val_generator, plot, gen_rate):
+def train(generator, discriminator, train_generator, val_generator, plot=True, gen_rate=0):
     # Construct optimizer
-    g_opt = optim.Adam(generator.parameters(), lr=LEARNING_RATE)
-    d_opt = optim.Adam(discriminator.parameters(), lr=LEARNING_RATE)
+    g_opt = optim.Adam(generator.parameters(), lr=G_LR)
+    d_opt = optim.Adam(discriminator.parameters(), lr=D_LR)
     train_gen = train_generator()
 
     with tqdm() as tq:
@@ -159,29 +160,32 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
             # Perform a rollout #
             fake_seqs, values, log_probs, entropies = g_rollout(generator, num_steps)
 
-            if running_acc is None or running_acc < 0.99:
-                # Train the discriminator (and compute rewards)
-                real_seqs = real_seqs[:, :num_steps]
-                accuracy, reward = d_train(discriminator, d_opt, fake_seqs, real_seqs)
-                running_acc = accuracy if running_acc is None else accuracy * 0.01 + running_acc * 0.99
+            # Train the discriminator (and compute rewards)
+            # We don't train the generator if it is too good
+            real_seqs = real_seqs[:, :num_steps]
+            optimize = running_acc is None or running_acc < D_OPT_MAX_ACC
+            accuracy, reward = d_train(discriminator, d_opt, fake_seqs, real_seqs, optimize)
+            running_acc = accumulate_running(running_acc, accuracy)
 
-            if running_acc is None or running_acc > 0.5:
+            if running_acc is None or running_acc > G_OPT_MIN_ACC:
                 # Train the generator (if the discriminator is decent)
                 avg_reward = g_train(generator, g_opt, values, log_probs, entropies, reward, num_steps)
-                running_reward = avg_reward if running_reward is None else avg_reward * 0.01 + running_reward * 0.99
+                running_reward = accumulate_running(running_reward, avg_reward)
 
             tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, loss=mle_loss)
             tq.update(1)
 
             if epoch % 500 == 0:
                 # Statistic
-                mle_loss = sum(compute_mle_loss(generator, data) for data in  itertools.islice(val_generator(), val_steps)) / val_steps
+                mle_loss = sum(compute_mle_loss(generator, data) for data in  itertools.islice(val_generator(), VAL_STEPS)) / VAL_STEPS
                 mle_losses.append(mle_loss)
                 all_rewards.append(avg_reward)
                 all_accs.append(accuracy)
-                plot_loss(all_rewards, 'reward')
-                plot_loss(all_accs, 'accuracy')
-                plot_loss(mle_losses, 'mle_loss')
+
+                if plot:
+                    plot_loss(all_rewards, 'reward')
+                    plot_loss(all_accs, 'accuracy')
+                    plot_loss(mle_losses, 'mle_loss')
 
             if epoch % 10000 == 0:
                 # Save model

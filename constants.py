@@ -27,10 +27,14 @@ SEQ_LEN = 512 + 1
 # Maximum silence time in seconds
 SILENT_LENGTH = 3
 GRADIENT_CLIP = 3
-LEARNING_RATE = 1e-4
+G_LR = 1e-4
+D_LR = 1e-3
 # Minimum number of epochs before leveling up cirriculum
 MIN_EPOCH_CL = 500
 CL_THRESHOLD = 0.1
+D_OPT_MAX_ACC = 0.95
+G_OPT_MIN_ACC = 0.5
+RUNNING_RATIO = 0.99
 # Discount factor
 DISCOUNT = 0.99
 # GAE parameter
