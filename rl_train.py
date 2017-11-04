@@ -66,20 +66,9 @@ def g_rollout(model, num_steps):
         log_probs.append(log_prob)
     return states, values, log_probs, entropies
 
-def g_train(generator, optimizer, num_steps):
+def g_train(generator, optimizer, values, log_probs, entropies, R, num_steps):
     generator.train()
     optimizer.zero_grad()
-    # Perform a rollout #
-    states, values, log_probs, entropies = g_rollout(generator, num_steps)
-
-    # Finished sequence generation. Now compute rewards!
-    # TODO: Simple reward scheme
-    R = var(torch.zeros(BATCH_SIZE, 1))
-
-    for state in states:
-        for i, b in enumerate(state):
-            if b[0] == state[i - 1][0] + 1:
-                R[i, 0] = R[i, 0] + 1
 
     values.append(R)
 
@@ -112,9 +101,13 @@ def g_train(generator, optimizer, num_steps):
     torch.nn.utils.clip_grad_norm(generator.parameters(), GRADIENT_CLIP)
 
     optimizer.step()
-    return mean_rewards.data[0], states
+    return mean_rewards.data[0]
 
 def d_train(discriminator, optimizer, fake_seqs, real_seqs):
+    """
+    Trains the generator
+    """
+    discriminator.train()
     optimizer.zero_grad()
     criterion = nn.BCEWithLogitsLoss()
 
@@ -127,11 +120,14 @@ def d_train(discriminator, optimizer, fake_seqs, real_seqs):
     targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
     accuracy = (outputs.round() == targets).sum().data[0] / (BATCH_SIZE * 2)
 
+    # TODO: Log prob or prob?
+    reward = var(torch.log(F.sigmoid(outputs[:BATCH_SIZE])).data)
+
     loss = criterion(outputs, targets)
     loss.backward()
 
     optimizer.step()
-    return accuracy
+    return accuracy, reward
 
 def train(generator, discriminator, train_generator, val_generator, plot, gen_rate):
     # Construct optimizer
@@ -153,11 +149,16 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
             target_steps = min(max(int(running_reward * SEQ_LEN), min_num_steps), SEQ_LEN)
             num_steps = random.randint(min_num_steps, target_steps)
 
-            # Train the generator
-            avg_reward, fake_seqs = g_train(generator, g_opt, num_steps)
-            # Train the discriminator
+            # Perform a rollout #
+            fake_seqs, values, log_probs, entropies = g_rollout(generator, num_steps)
+
+            # Train the discriminator (and compute rewards)
             real_seqs = real_seqs[:, :num_steps]
-            accuracy = d_train(discriminator, d_opt, fake_seqs, real_seqs)
+            accuracy, reward = d_train(discriminator, d_opt, fake_seqs, real_seqs)
+
+            # Train the generator
+            avg_reward = g_train(generator, g_opt, values, log_probs, entropies, reward, num_steps)
+
 
             if iteration == 1:
                 running_reward = avg_reward
