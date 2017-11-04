@@ -6,9 +6,9 @@ from constants import *
 from util import *
 import numpy as np
 
-class DeepJG(nn.Module):
+class DeepJCommon(nn.Module):
     """
-    The DeepJ neural network model architecture.
+    DeepJ base common shared module
     """
     def __init__(self, num_actions=NUM_ACTIONS, num_units=512, num_layers=3, style_units=32):
         super().__init__()
@@ -21,8 +21,6 @@ class DeepJG(nn.Module):
         self.input_linear = nn.Linear(num_actions, self.num_units)
         # Project style into distributed representation
         self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
-        # Output layer
-        self.output_linear = nn.Linear(self.num_units, num_actions + 1)
 
         self.layers = [RNNLayer(self.num_units, self.num_units) for i in range(num_layers)]
 
@@ -30,9 +28,6 @@ class DeepJG(nn.Module):
             self.add_module('rnn_layer_' + str(i), layer)
 
     def forward(self, x, style, states=None):
-        batch_size = x.size(0)
-        seq_len = x.size(1)
-
         # Distributed input representation
         x = F.tanh(self.input_linear(x))
         # Distributed style representation
@@ -44,7 +39,23 @@ class DeepJG(nn.Module):
 
         for l, (layer, state) in enumerate(zip(self.layers, states)):
             x, states[l] = layer(x, style, state)
+        return x, states
 
+class DeepJG(nn.Module):
+    """
+    The DeepJ neural network model architecture.
+    """
+    def __init__(self, common_module, num_actions=NUM_ACTIONS, num_units=512):
+        super().__init__()
+        self.num_units = num_units
+        self.num_actions = num_actions
+
+        self.common_module = common_module
+        # Output layer
+        self.output_linear = nn.Linear(self.num_units, num_actions + 1)
+
+    def forward(self, x, style, states=None):
+        x, states = self.common_module(x, style, states)
         x = self.output_linear(x)
 
         # Split into value and policy outputs
@@ -65,38 +76,17 @@ class DeepJD(nn.Module):
     """
     The DeepJ neural network model architecture.
     """
-    def __init__(self, num_actions=NUM_ACTIONS, num_units=256, num_layers=3, style_units=32):
+    def __init__(self, common_module, num_actions=NUM_ACTIONS, num_units=512):
         super().__init__()
         self.num_units = num_units
         self.num_actions = num_actions
-        self.num_layers = num_layers
-        self.style_units = style_units
 
-        # Project input into distributed representation
-        self.input_linear = nn.Linear(num_actions, self.num_units)
-        # Project style into distributed representation
-        self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
+        self.common_module = common_module
         # Output layer
         self.output_linear = nn.Linear(self.num_units, 1)
 
-        self.layers = [RNNLayer(self.num_units, self.num_units) for i in range(num_layers)]
-
-        for i, layer in enumerate(self.layers):
-            self.add_module('rnn_layer_' + str(i), layer)
-
     def forward(self, x, style, states=None):
-        # Distributed input representation
-        x = F.tanh(self.input_linear(x))
-        # Distributed style representation
-        # style = F.tanh(self.style_linear(style))
-
-        # Initialize state
-        if states is None:
-            states = [None for _ in range(self.num_layers)]
-
-        for l, (layer, state) in enumerate(zip(self.layers, states)):
-            x, states[l] = layer(x, style, state)
-
+        x, states = self.common_module(x, style, states)
         # Only consider last time step
         x = x[:, -1, :]
         x = self.output_linear(x)

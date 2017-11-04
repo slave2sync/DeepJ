@@ -27,7 +27,7 @@ SEQ_LEN = 512 + 1
 # Maximum silence time in seconds
 SILENT_LENGTH = 3
 GRADIENT_CLIP = 3
-G_LR = 1e-4
+G_LR = 2e-4
 D_LR = 1e-3
 # Minimum number of epochs before leveling up cirriculum
 MIN_EPOCH_CL = 500

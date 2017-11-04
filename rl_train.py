@@ -228,8 +228,9 @@ def main():
 
     print('=== Loading Model ===')
     print('GPU: {}'.format(torch.cuda.is_available()))
-    generator = DeepJG()
-    discriminator = DeepJD()
+    common = DeepJCommon()
+    generator = DeepJG(common)
+    discriminator = DeepJD(common)
 
     if torch.cuda.is_available():
         # TODO
