@@ -5,6 +5,7 @@ import sys
 import math
 import numpy as np
 import argparse
+from tqdm import tqdm
 
 import torch
 import torch.nn.functional as F
@@ -12,100 +13,98 @@ import torch.optim as optim
 
 from dataset import *
 from constants import *
-from env import Env
 from model import DeepJ
 from torch.autograd import Variable
 
 num_steps = 32
 # Discount factor
-gamma = 0.99
+discount = 0.99
 # GAE parameter
 tau = 1.00
 
-def g_train(env, model, optimizer, plot, gen_rate):
-    # TODO: Verify location of this line
-    model.train()
+def g_rollout(model):
+    """
+    Rollout a sequence
+    """
+    # Init state to zero vector
+    state = None
+    # Reset memory
+    memory = None
+    # TODO: Do we need noise regularization?
+    # Pick a new noise vector (until next optimisation step)
+    # model.sample_noise()
 
-    state = env.reset()
-    state = torch.from_numpy(state)
-    done = True
+    states = []
+    values = []
+    log_probs = []
 
-    episode_length = 0
+    # Perform sequence generation #
+    for step in range(num_steps):
+        state_vec = torch.zeros(BATCH_SIZE, NUM_ACTIONS) if state is None else one_hot_batch(state, NUM_ACTIONS)
+        state_vec = state_vec.unsqueeze(1)
+        states.append(state_vec)
+        value, logit, memory = model(var(state_vec), None, memory)
+        value = value.squeeze(1)
+        logit = logit.squeeze(1)
 
-    while True:
-        episode_length += 1
-        
-        if done:
-            memory = None
-        else:
-            memory = tuple(Variable(x.data) for x in memory)
-        
-        # TODO: Do we need noise regularization?
-        # Pick a new noise vector (until next optimisation step)
-        # model.sample_noise()
+        prob = F.softmax(logit)
+        log_prob = F.log_softmax(logit)
 
-        values = []
-        log_probs = []
-        rewards = []
+        # Sample actions
+        action = prob.multinomial().data
+        log_prob = log_prob.gather(1, var(action))
 
-        for step in range(num_steps):
-            value, logit, memory = model((Variable(state.unsqueeze(0)), memory))
-            prob = F.softmax(logit)
-            log_prob = F.log_softmax(logit)
+        # Action become's next state
+        state = action.cpu()
 
-            action = prob.multinomial().data
-            log_prob = log_prob.gather(1, Variable(action))
+        values.append(value)
+        log_probs.append(log_prob)
+    
+    return states, values, log_probs
 
-            state, reward, done, _ = env.step(action.numpy()[0])
+def g_train(model, optimizer, plot, gen_rate):
+    with tqdm() as tq:
+        while True:
+            model.train()
+            optimizer.zero_grad()
+            # Perform a rollout #
+            states, values, log_probs = g_rollout(model)
 
-            if done:
-                episode_length = 0
-                state = env.reset()
+            # Finished sequence generation. Now compute rewards!
+            R = var(torch.zeros(BATCH_SIZE, 1))
+            values.append(R)
 
-            state = torch.from_numpy(state)
-            values.append(value)
-            log_probs.append(log_prob)
-            rewards.append(reward)
+            policy_loss = 0
+            value_loss = 0
 
-            if done:
-                break
+            gae = var(torch.zeros(BATCH_SIZE, 1))
 
-        R = torch.zeros(1, 1)
-        if not done:
-            value, _, _ = model((Variable(state.unsqueeze(0)), memory))
-            R = value.data
+            # Standardize rewards
+            # rewards = np.array(rewards, dtype=float)
+            # rewards -= np.mean(rewards)
+            # reward_std = np.std(rewards)
+            # rewards /= reward_std if reward_std != 0 else 1
 
-        values.append(Variable(R))
-        policy_loss = 0
-        value_loss = 0
-        R = Variable(R)
-        gae = torch.zeros(1, 1)
+            for i in reversed(range(num_steps)):
+                R = discount * R
+                advantage = R - values[i]
+                value_loss += 0.5 * advantage.pow(2)
 
-        # Standardize rewards
-        rewards = np.array(rewards, dtype=float)
-        rewards -= np.mean(rewards)
-        reward_std = np.std(rewards)
-        rewards /= reward_std if reward_std != 0 else 1
+                # Generalized Advantage Estimataion
+                delta_t = discount * values[i + 1] - values[i]
+                gae = gae * discount * tau + delta_t
 
-        for i in reversed(range(len(rewards))):
-            R = gamma * R + rewards[i]
-            advantage = R - values[i]
-            value_loss += 0.5 * advantage.pow(2)
+                policy_loss -= log_probs[i] * gae
 
-            # Generalized Advantage Estimataion
-            delta_t = rewards[i] + gamma * \
-                values[i + 1].data - values[i].data
-            gae = gae * gamma * tau + delta_t
+            loss = torch.sum(policy_loss + 0.5 * value_loss)
+            loss.backward()
+            # TODO: Tune gradient clipping parameter?
+            torch.nn.utils.clip_grad_norm(model.parameters(), GRADIENT_CLIP)
 
-            policy_loss -= log_probs[i] * Variable(gae)
+            optimizer.step()
 
-        (policy_loss + 0.5 * value_loss).backward()
-        # TODO: Tune gradient clipping parameter?
-        torch.nn.utils.clip_grad_norm(model.parameters(), 40)
-
-        optimizer.step()
-        optimizer.zero_grad()
-
+            tq.set_postfix(loss=loss.data[0], reward=R.mean().data[0])
+            tq.update(BATCH_SIZE)
 def main():
     parser = argparse.ArgumentParser(description='Trains model')
     parser.add_argument('--path', help='Load existing model?')
@@ -118,8 +117,6 @@ def main():
     model = DeepJ()
 
     if torch.cuda.is_available():
-        # TODO: Remove
-        torch.backends.cudnn.enabled = False
         model.cuda()
 
     if args.path:
@@ -151,7 +148,7 @@ def main():
     print()
 
     print('=== Training ===')
-    g_train(Env(), model, optimizer, plot=not args.noplot, gen_rate=args.gen)
+    g_train(model, optimizer, plot=not args.noplot, gen_rate=args.gen)
 
 if __name__ == '__main__':
     main()

@@ -35,7 +35,7 @@ class DeepJ(nn.Module):
         # Distributed input representation
         x = F.tanh(self.input_linear(x))
         # Distributed style representation
-        style = F.tanh(self.style_linear(style))
+        # style = F.tanh(self.style_linear(style))
 
         # Initialize state
         if states is None:
@@ -85,10 +85,10 @@ class RNNLayer(nn.Module):
         seq_len = x.size(1)
 
         # Style integration
-        style_activation = F.tanh(self.style_layer(style))
-        style_seq = style_activation.unsqueeze(1)
-        style_seq = style_seq.expand(batch_size, seq_len, self.num_units)
-        x = x + style_seq
+        # style_activation = F.tanh(self.style_layer(style))
+        # style_seq = style_activation.unsqueeze(1)
+        # style_seq = style_seq.expand(batch_size, seq_len, self.num_units)
+        # x = x + style_seq
 
-        x, state = rnn(x, state)
+        x, state = self.rnn(x, state)
         return x, state
