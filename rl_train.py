@@ -4,12 +4,16 @@ import sys
 
 import math
 import numpy as np
+import argparse
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
+
+from dataset import *
 from constants import *
-from util import create_env
-from model import ActorCritic
+from env import Env
+from model import DeepJ
 from torch.autograd import Variable
 
 num_steps = 32
@@ -18,10 +22,8 @@ gamma = 0.99
 # GAE parameter
 tau = 1.00
 
-def train(env, model):
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-
-    # TODO: Verify location of this
+def train(env, model, optimizer, plot, gen_rate):
+    # TODO: Verify location of this line
     model.train()
 
     state = env.reset()
@@ -38,8 +40,9 @@ def train(env, model):
         else:
             memory = tuple(Variable(x.data) for x in memory)
         
+        # TODO: Do we need noise regularization?
         # Pick a new noise vector (until next optimisation step)
-        model.sample_noise()
+        # model.sample_noise()
 
         values = []
         log_probs = []
@@ -97,7 +100,58 @@ def train(env, model):
             policy_loss -= log_probs[i] * Variable(gae)
 
         (policy_loss + 0.5 * value_loss).backward()
+        # TODO: Tune gradient clipping parameter?
         torch.nn.utils.clip_grad_norm(model.parameters(), 40)
 
         optimizer.step()
         optimizer.zero_grad()
+
+def main():
+    parser = argparse.ArgumentParser(description='Trains model')
+    parser.add_argument('--path', help='Load existing model?')
+    parser.add_argument('--gen', default=0, type=int, help='Generate per how many epochs?')
+    parser.add_argument('--noplot', default=False, action='store_true', help='Do not plot training/loss graphs')
+    args = parser.parse_args()
+
+    print('=== Loading Model ===')
+    print('GPU: {}'.format(torch.cuda.is_available()))
+    model = DeepJ()
+
+    if torch.cuda.is_available():
+        # TODO: Remove
+        torch.backends.cudnn.enabled = False
+        model.cuda()
+
+    if args.path:
+        model.load_state_dict(torch.load(args.path))
+        print('Restored model from checkpoint.')
+
+    # Construct optimizer
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+    print()
+
+    print('=== Dataset ===')
+    os.makedirs(OUT_DIR, exist_ok=True)
+    print('Loading data...')
+    data = process(load())
+    print()
+    print('Creating data generators...')
+    train_data, val_data = validation_split(data)
+    train_generator = lambda: batcher(sampler(train_data))
+    val_generator = lambda: batcher(sampler(val_data))
+
+    """
+    # Checks if training data sounds right.
+    for i, (train_seq, *_) in enumerate(train_generator()):
+        save_midi('train_seq_{}'.format(i), train_seq[0].cpu().numpy())
+    """
+
+    print('Training Sequences:', len(train_data[0]), 'Validation Sequences:', len(val_data[0]))
+    print()
+
+    print('=== Training ===')
+    train(Env(), model, optimizer, plot=not args.noplot, gen_rate=args.gen)
+
+if __name__ == '__main__':
+    main()

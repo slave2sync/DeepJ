@@ -47,8 +47,6 @@ class DeepJ(nn.Module):
             states = [None for _ in range(self.num_layers)]
 
         for l, rnn in enumerate(self.rnns):
-            # prev_x = x
-
             # Style integration
             style_activation = self.tanh(self.style_layers[l](style))
             style_seq = style_activation.unsqueeze(1)
@@ -56,10 +54,6 @@ class DeepJ(nn.Module):
             x = x + style_seq
 
             x, states[l] = rnn(x, states[l])
-
-            # Residual connection
-            # if l != 0:
-                # x = x + prev_x
 
         x = self.output_linear(x)
         return x, states
