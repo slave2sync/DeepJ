@@ -22,7 +22,7 @@ gamma = 0.99
 # GAE parameter
 tau = 1.00
 
-def train(env, model, optimizer, plot, gen_rate):
+def g_train(env, model, optimizer, plot, gen_rate):
     # TODO: Verify location of this line
     model.train()
 
@@ -151,7 +151,7 @@ def main():
     print()
 
     print('=== Training ===')
-    train(Env(), model, optimizer, plot=not args.noplot, gen_rate=args.gen)
+    g_train(Env(), model, optimizer, plot=not args.noplot, gen_rate=args.gen)
 
 if __name__ == '__main__':
     main()

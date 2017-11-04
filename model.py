@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 from constants import *
 from util import *
@@ -15,54 +16,79 @@ class DeepJ(nn.Module):
         self.num_layers = num_layers
         self.style_units = style_units
 
-        # RNN
-        self.rnns = [nn.LSTM(self.num_units, self.num_units, batch_first=True) for i in range(num_layers)]
-
+        # Project input into distributed representation
         self.input_linear = nn.Linear(NUM_ACTIONS, self.num_units)
-        self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS)
-        self.softmax = nn.Softmax()
-
-        for i, rnn in enumerate(self.rnns):
-            self.add_module('rnn_' + str(i), rnn)
-
-        # Style
+        # Project style into distributed representation
         self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
-        self.style_layers = [nn.Linear(self.style_units, self.num_units) for i in range(num_layers)]
-        self.tanh = nn.Tanh()
+        # Output layer
+        self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS + 1)
 
-        for i, layer in enumerate(self.style_layers):
-            self.add_module('style_layers_' + str(i), layer)
+        self.layers = [RNNLayer(self.num_units, self.num_units) for i in range(num_layers)]
+
+        for i, layer in enumerate(self.layers):
+            self.add_module('rnn_layer_' + str(i), layer)
 
     def forward(self, x, style, states=None):
         batch_size = x.size(0)
         seq_len = x.size(1)
 
-        ## Process style ##
+        # Distributed input representation
+        x = F.tanh(self.input_linear(x))
         # Distributed style representation
-        style = self.style_linear(style)
-        x = self.tanh(self.input_linear(x))
+        style = F.tanh(self.style_linear(style))
 
-        ## Process RNN ##
+        # Initialize state
         if states is None:
             states = [None for _ in range(self.num_layers)]
 
-        for l, rnn in enumerate(self.rnns):
-            # Style integration
-            style_activation = self.tanh(self.style_layers[l](style))
-            style_seq = style_activation.unsqueeze(1)
-            style_seq = style_seq.expand(batch_size, seq_len, self.num_units)
-            x = x + style_seq
-
-            x, states[l] = rnn(x, states[l])
+        for l, (layer, state) in enumerate(zip(self.layers, states)):
+            x, states[l] = layer(x, style, state)
 
         x = self.output_linear(x)
-        return x, states
+
+        # Split into value and policy outputs
+        value = x[:, :, 0]
+        policy = x[:, :, 1:]
+        return value, policy, states
 
     def generate(self, x, style, states, temperature=1):
         """ Returns the probability of outputs """
-        x, states = self.forward(x, style, states)
+        _, x, states = self.forward(x, style, states)
         seq_len = x.size(1)
         x = x.view(-1, NUM_ACTIONS)
-        x = self.softmax(x / temperature)
+        x = F.softmax(x / temperature)
         x = x.view(-1, seq_len, NUM_ACTIONS)
         return x, states
+
+class DeepJD(nn.Module):
+    """
+    The DeepJ discriminator neural network model architecture.
+    """
+    def __init__(self, num_units=512, num_layers=3, style_units=32):
+        super().__init__()
+        # TODO:
+
+
+class RNNLayer(nn.Module):
+    """
+    A DeepJ RNN layer that contains an LSTM and style layer
+    """
+    def __init__(self, num_inputs, num_units):
+        super().__init__()
+        self.num_units = num_units
+        self.rnn = nn.LSTM(num_inputs, num_units, batch_first=True)
+        self.style_layer = nn.Linear(num_inputs, num_units)
+    
+    def forward(self, x, style, state=None):
+        """ Takes input x and style embeddings """
+        batch_size = x.size(0)
+        seq_len = x.size(1)
+
+        # Style integration
+        style_activation = F.tanh(self.style_layer(style))
+        style_seq = style_activation.unsqueeze(1)
+        style_seq = style_seq.expand(batch_size, seq_len, self.num_units)
+        x = x + style_seq
+
+        x, state = rnn(x, state)
+        return x, state
