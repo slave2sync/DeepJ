@@ -16,7 +16,7 @@ from constants import *
 from model import DeepJ
 from torch.autograd import Variable
 
-num_steps = 32
+num_steps = 8
 # Discount factor
 discount = 0.99
 # GAE parameter
@@ -37,12 +37,12 @@ def g_rollout(model):
     states = []
     values = []
     log_probs = []
+    entropies = []
 
     # Perform sequence generation #
     for step in range(num_steps):
         state_vec = torch.zeros(BATCH_SIZE, NUM_ACTIONS) if state is None else one_hot_batch(state, NUM_ACTIONS)
         state_vec = state_vec.unsqueeze(1)
-        states.append(state_vec)
         value, logit, memory = model(var(state_vec), None, memory)
         value = value.squeeze(1)
         logit = logit.squeeze(1)
@@ -50,28 +50,40 @@ def g_rollout(model):
         prob = F.softmax(logit)
         log_prob = F.log_softmax(logit)
 
+        entropy = -(log_prob * prob).sum(1, keepdim=True)
+        entropies.append(entropy)
+
         # Sample actions
         action = prob.multinomial().data
         log_prob = log_prob.gather(1, var(action))
 
         # Action become's next state
         state = action.cpu()
+        states.append(state)
 
         values.append(value)
         log_probs.append(log_prob)
-    
-    return states, values, log_probs
+    return states, values, log_probs, entropies
 
 def g_train(model, optimizer, plot, gen_rate):
     with tqdm() as tq:
+        running_reward = 0
+
         while True:
             model.train()
             optimizer.zero_grad()
             # Perform a rollout #
-            states, values, log_probs = g_rollout(model)
+            states, values, log_probs, entropies = g_rollout(model)
 
             # Finished sequence generation. Now compute rewards!
+            # TODO: Simple reward scheme
             R = var(torch.zeros(BATCH_SIZE, 1))
+
+            for state in states[1:]:
+                for i, b in enumerate(state):
+                    if b[0] > state[i - 1][0]:
+                        R[i, 0] = 1
+
             values.append(R)
 
             policy_loss = 0
@@ -80,10 +92,11 @@ def g_train(model, optimizer, plot, gen_rate):
             gae = var(torch.zeros(BATCH_SIZE, 1))
 
             # Standardize rewards
-            # rewards = np.array(rewards, dtype=float)
-            # rewards -= np.mean(rewards)
-            # reward_std = np.std(rewards)
-            # rewards /= reward_std if reward_std != 0 else 1
+            mean_rewards = R.mean()
+            std_rewards = R.std()
+            R -= mean_rewards
+            if std_rewards.data[0] != 0:
+                R /= std_rewards
 
             for i in reversed(range(num_steps)):
                 R = discount * R
@@ -93,8 +106,8 @@ def g_train(model, optimizer, plot, gen_rate):
                 # Generalized Advantage Estimataion
                 delta_t = discount * values[i + 1] - values[i]
                 gae = gae * discount * tau + delta_t
-
-                policy_loss -= log_probs[i] * gae
+                # TODO: Need entropy?
+                policy_loss -= log_probs[i] * gae + 0.01 * entropies[i]
 
             loss = torch.sum(policy_loss + 0.5 * value_loss)
             loss.backward()
@@ -103,7 +116,8 @@ def g_train(model, optimizer, plot, gen_rate):
 
             optimizer.step()
 
-            tq.set_postfix(loss=loss.data[0], reward=R.mean().data[0])
+            running_reward = mean_rewards.data[0] * 0.01 + running_reward * 0.99
+            tq.set_postfix(loss=loss.data[0], reward=running_reward)
             tq.update(BATCH_SIZE)
 def main():
     parser = argparse.ArgumentParser(description='Trains model')
