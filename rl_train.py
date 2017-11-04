@@ -6,6 +6,7 @@ import math
 import numpy as np
 import argparse
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.functional as F
@@ -136,17 +137,21 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
     train_gen = train_generator()
 
     with tqdm() as tq:
-        iteration = 0
+        epoch = 0
         running_reward = 0
+        mle_losses = []
+        all_rewards = []
+        all_accs = []
 
-        for real_seqs, styles in train_gen:
-            iteration += 1
+        for data in train_gen:
+            epoch += 1
+            real_seqs, styles = data
 
             target_steps = min_num_steps
 
             # Gradually increase the number of steps
             # TODO: Raise sequence length bounds
-            target_steps = min(max(int(running_reward * SEQ_LEN), min_num_steps), SEQ_LEN)
+            target_steps = min(epoch // 1e6 + min_num_steps, SEQ_LEN)
             num_steps = random.randint(min_num_steps, target_steps)
 
             # Perform a rollout #
@@ -159,14 +164,54 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
             # Train the generator
             avg_reward = g_train(generator, g_opt, values, log_probs, entropies, reward, num_steps)
 
-
-            if iteration == 1:
+            if epoch == 1:
                 running_reward = avg_reward
             else:
                 running_reward = avg_reward * 0.01 + running_reward * 0.99
 
-            tq.set_postfix(len=num_steps, reward=running_reward, d_acc=accuracy)
+            # Statistic
+            # mle_loss = compute_mle_loss(generator, data)
+            # mle_losses.append(mle_loss)
+
+            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=accuracy)#, loss=mle_loss)
             tq.update(BATCH_SIZE)
+
+            if epoch % 1000 == 0:
+                # Save model
+                torch.save(generator.state_dict(), OUT_DIR + '/generator_' + str(epoch) + '.pt')
+                torch.save(discriminator.state_dict(), OUT_DIR + '/discriminator_' + str(epoch) + '.pt')
+
+                all_rewards.append(avg_reward)
+                all_accs.append(accuracy)
+                plot_loss(all_rewards, 'reward')
+                plot_loss(all_accs, 'accuracy')
+
+def plot_loss(validation_loss, name):
+    # Draw graph
+    plt.clf()
+    plt.plot(validation_loss)
+    plt.savefig(OUT_DIR + '/' + name)
+
+def compute_mle_loss(generator, data):
+    """
+    Computes the MLE loss of the generator
+    """
+    generator.eval()
+    criterion = nn.CrossEntropyLoss()
+    # Convert all tensors into variables
+    note_seq, styles = data
+    # styles = var(one_hot_batch(styles, NUM_STYLES), volatile=True)
+    styles = None # TODO
+
+    # Feed it to the model
+    inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=True)
+    targets = var(note_seq[:, 1:], volatile=True)
+    output, states = generator(inputs, styles, None)
+
+    # Compute the loss.
+    loss = criterion(output.view(-1, NUM_ACTIONS), targets.view(-1))
+
+    return loss
 
 def main():
     parser = argparse.ArgumentParser(description='Trains model')
