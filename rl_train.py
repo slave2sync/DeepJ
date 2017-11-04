@@ -18,15 +18,6 @@ from constants import *
 from model import *
 from torch.autograd import Variable
 
-# Discount factor
-discount = 0.99
-# GAE parameter
-tau = 1.00
-
-min_num_steps = 3
-
-val_steps = 10
-
 def g_rollout(model, num_steps):
     """
     Rollout a sequence
@@ -143,39 +134,43 @@ def train(generator, discriminator, train_generator, val_generator, plot, gen_ra
 
     with tqdm() as tq:
         epoch = 0
-        running_reward = 0
+        running_reward = None
+        running_acc = None
+        target_steps = MIN_SEQ_LEN
         mle_loss = 0
+        cl_counter = 0
+
         mle_losses = []
         all_rewards = []
         all_accs = []
 
         for real_seqs, styles in train_gen:
             epoch += 1
-
-            target_steps = min_num_steps
+            cl_counter += 1
 
             # Gradually increase the number of steps
-            # TODO: Raise sequence length bounds
-            target_steps = min(epoch // 1e5 + min_num_steps, SEQ_LEN)
-            num_steps = random.randint(min_num_steps, target_steps)
+            if running_acc is not None and abs(running_acc - 0.5) < CL_THRESHOLD and cl_counter > MIN_EPOCH_CL:
+                # Only increase timestep if the discriminator cannot get better
+                target_steps = min(target_steps + 1, SEQ_LEN)
+                cl_counter = 0
+                
+            num_steps = random.randint(MIN_SEQ_LEN, target_steps)
 
             # Perform a rollout #
             fake_seqs, values, log_probs, entropies = g_rollout(generator, num_steps)
 
-            # Train the discriminator (and compute rewards)
-            real_seqs = real_seqs[:, :num_steps]
-            accuracy, reward = d_train(discriminator, d_opt, fake_seqs, real_seqs)
+            if running_acc is None or running_acc < 0.99:
+                # Train the discriminator (and compute rewards)
+                real_seqs = real_seqs[:, :num_steps]
+                accuracy, reward = d_train(discriminator, d_opt, fake_seqs, real_seqs)
+                running_acc = accuracy if running_acc is None else accuracy * 0.01 + running_acc * 0.99
 
-            if accuracy > 0.5:
+            if running_acc is None or running_acc > 0.5:
                 # Train the generator (if the discriminator is decent)
                 avg_reward = g_train(generator, g_opt, values, log_probs, entropies, reward, num_steps)
+                running_reward = avg_reward if running_reward is None else avg_reward * 0.01 + running_reward * 0.99
 
-                if epoch == 1:
-                    running_reward = avg_reward
-                else:
-                    running_reward = avg_reward * 0.01 + running_reward * 0.99
-
-            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=accuracy, loss=mle_loss)
+            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, loss=mle_loss)
             tq.update(1)
 
             if epoch % 500 == 0:
