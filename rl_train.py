@@ -33,7 +33,6 @@ def g_rollout(model, num_steps):
     states = []
     values = []
     log_probs = []
-    entropies = []
 
     # Perform sequence generation #
     for step in range(num_steps):
@@ -46,9 +45,6 @@ def g_rollout(model, num_steps):
         prob = F.softmax(logit)
         log_prob = F.log_softmax(logit)
 
-        entropy = -(log_prob * prob).sum(1, keepdim=True)
-        entropies.append(entropy)
-
         # Sample actions
         action = prob.multinomial().data
         log_prob = log_prob.gather(1, var(action))
@@ -59,9 +55,9 @@ def g_rollout(model, num_steps):
 
         values.append(value)
         log_probs.append(log_prob)
-    return states, values, log_probs, entropies
+    return states, values, log_probs
 
-def g_train(generator, optimizer, values, log_probs, entropies, R, num_steps):
+def g_train(generator, optimizer, values, log_probs, R, num_steps):
     generator.train()
     optimizer.zero_grad()
 
@@ -88,7 +84,7 @@ def g_train(generator, optimizer, values, log_probs, entropies, R, num_steps):
         delta_t = DISCOUNT * values[i + 1] - values[i]
         gae = gae * DISCOUNT * TAU + delta_t
         # TODO: Need entropy?
-        policy_loss -= log_probs[i] * gae# + 0.01 * entropies[i]
+        policy_loss -= log_probs[i] * gae
 
     loss = torch.sum(policy_loss + 0.5 * value_loss)
     loss.backward()
@@ -115,17 +111,19 @@ def d_train(discriminator, optimizer, fake_seqs, real_seqs, optimize=True):
     targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
 
     probs = F.sigmoid(outputs)
+    log_probs = torch.log(probs)
+    entropy = torch.mean(-probs * log_probs - (1 - probs) * torch.log(1 - probs))
     accuracy = (probs.round() == targets).sum().data[0] / (BATCH_SIZE * 2)
 
     # TODO: Log prob or prob?
-    reward = var(torch.log(probs[:BATCH_SIZE]).data)
+    reward = var(log_probs[:BATCH_SIZE].data)
 
     if optimize:
         loss = criterion(outputs, targets)
         loss.backward()
 
         optimizer.step()
-    return accuracy, reward
+    return accuracy, reward, entropy.data[0]
 
 def train(generator, discriminator, train_generator, val_generator, plot=True, gen_rate=0):
     # Construct optimizer
@@ -137,6 +135,7 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
         epoch = 0
         running_reward = None
         running_acc = None
+        running_entropy = None
         target_steps = MIN_SEQ_LEN
         mle_loss = 0
         cl_counter = 0
@@ -150,29 +149,31 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
             cl_counter += 1
 
             # Gradually increase the number of steps
-            if running_acc is not None and abs(running_acc - 0.5) < CL_THRESHOLD and cl_counter > MIN_EPOCH_CL:
-                # Only increase timestep if the discriminator cannot get better
+            if running_entropy is not None and running_entropy > CL_THRESHOLD and cl_counter > MIN_EPOCH_CL:
+                # Only increase timestep if the discriminator
+                # is uncertain about the generator's output (convergence)
                 target_steps = min(target_steps + 1, SEQ_LEN)
                 cl_counter = 0
                 
             num_steps = random.randint(MIN_SEQ_LEN, target_steps)
 
             # Perform a rollout #
-            fake_seqs, values, log_probs, entropies = g_rollout(generator, num_steps)
+            fake_seqs, values, log_probs = g_rollout(generator, num_steps)
 
             # Train the discriminator (and compute rewards)
             # We don't train the generator if it is too good
             real_seqs = real_seqs[:, :num_steps]
             optimize = running_acc is None or running_acc < D_OPT_MAX_ACC
-            accuracy, reward = d_train(discriminator, d_opt, fake_seqs, real_seqs, optimize)
+            accuracy, reward, entropy = d_train(discriminator, d_opt, fake_seqs, real_seqs, optimize)
+            running_entropy = accumulate_running(running_entropy, entropy)
             running_acc = accumulate_running(running_acc, accuracy)
 
             if running_acc is None or running_acc > G_OPT_MIN_ACC:
                 # Train the generator (if the discriminator is decent)
-                avg_reward = g_train(generator, g_opt, values, log_probs, entropies, reward, num_steps)
+                avg_reward = g_train(generator, g_opt, values, log_probs, reward, num_steps)
                 running_reward = accumulate_running(running_reward, avg_reward)
 
-            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, loss=mle_loss)
+            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, loss=mle_loss, entropy=running_entropy)
             tq.update(1)
 
             if epoch % 500 == 0:
