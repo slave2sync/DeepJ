@@ -196,20 +196,19 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             
             # TODO: Modulate the MLE loss over time using some function?
             modulation = min(epoch / 1e5, 1)
-            total_loss += mle_train_loss * (1 - modulation)
+            (mle_train_loss * (1 - modulation)).backward(retain_graph=True)
 
             # We don't train the generator if it is too good. Let G catch up.
             if running_acc < D_OPT_MAX_ACC:
-                total_loss += d_loss
+                d_loss.backward()
 
             # Train the generator (if the discriminator is decent)
             if running_acc > G_OPT_MIN_ACC:
                 avg_reward, rl_loss = compute_rl_loss(model, values, log_probs, reward, num_steps)
                 running_reward = accumulate_running(running_reward, avg_reward)
-                total_loss += rl_loss * modulation
+                (rl_loss * modulation).backward()
 
             # Perform gradient updates
-            total_loss.backward()
             # TODO: Tune gradient clipping parameter?
             torch.nn.utils.clip_grad_norm(model.parameters(), GRADIENT_CLIP)
             opt.step()
