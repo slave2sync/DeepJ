@@ -184,7 +184,7 @@ def main():
     model = DeepJ()
 
     # Windows pytorch doesn't support fast LSTM
-    torch.backends.cudnn = False
+    torch.backends.cudnn.enabled = False
 
     if torch.cuda.is_available():
         model.cuda()
