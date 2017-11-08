@@ -197,7 +197,8 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             running_acc = accumulate_running(running_acc, accuracy)
             
             # TODO: Modulate the MLE loss over time?
-            total_loss += mle_train_loss
+            modulation = min(epoch / 10000, 1)
+            total_loss += mle_train_loss * (1 - modulation)
 
             # We don't train the generator if it is too good. Let G catch up.
             if running_acc < D_OPT_MAX_ACC:
@@ -207,7 +208,7 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             if running_acc > G_OPT_MIN_ACC:
                 avg_reward, rl_loss = compute_rl_loss(model, values, log_probs, reward, num_steps)
                 running_reward = accumulate_running(running_reward, avg_reward)
-                total_loss += rl_loss
+                total_loss += rl_loss * modulation
 
             # Perform gradient updates
             total_loss.backward()
@@ -218,7 +219,7 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             ## Statistics ##
             mle_train_loss = mle_train_loss.data[0]
 
-            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, val_loss=mle_loss, entropy=running_entropy, train_loss=mle_train_loss)
+            tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, val_loss=mle_loss, entropy=running_entropy, train_loss=mle_train_loss, m=modulation)
             tq.update(1)
 
             if epoch % 200 == 0:
