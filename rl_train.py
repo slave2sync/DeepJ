@@ -171,7 +171,6 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
         for data in train_gen:
             epoch += 1
             cl_counter += 1
-            real_seqs, styles = data
 
             model.train()
             opt.zero_grad()
@@ -187,17 +186,21 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
                 
             num_steps = random.randint(MIN_SEQ_LEN, target_steps)
             
+            # Cut out the data
+            # TODO: Use a function to do this in data generator
+            real_seqs, styles = data
+            real_seqs = real_seqs[:, :num_steps]
+            
             # Perform a rollout #
             fake_seqs, values, log_probs = g_rollout(model, num_steps)
 
             # Train the discriminator (and compute rewards)
-            real_seqs = real_seqs[:, :num_steps]
             accuracy, reward, entropy, d_loss, mle_train_loss = compute_d_loss(model, fake_seqs, real_seqs)
             running_entropy = accumulate_running(running_entropy, entropy)
             running_acc = accumulate_running(running_acc, accuracy)
             
             # TODO: Modulate the MLE loss over time?
-            modulation = min(epoch / 10000, 1)
+            modulation = min(epoch / 1e5, 1)
             total_loss += mle_train_loss * (1 - modulation)
 
             # We don't train the generator if it is too good. Let G catch up.

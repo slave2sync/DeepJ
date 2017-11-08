@@ -22,8 +22,8 @@ NUM_ACTIONS = VEL_OFFSET + VEL_QUANTIZATION
 
 # Trainin Parameters
 BATCH_SIZE = 64
-MIN_SEQ_LEN = 8
 SEQ_LEN = 512 + 1
+MIN_SEQ_LEN = SEQ_LEN
 # Maximum silence time in seconds
 SILENT_LENGTH = 3
 GRADIENT_CLIP = 3
