@@ -6,28 +6,36 @@ from constants import *
 from util import *
 import numpy as np
 
-class DeepJCommon(nn.Module):
+class DeepJ(nn.Module):
     """
-    DeepJ base common shared module
+    The DeepJ neural network model architecture.
     """
-    def __init__(self, num_actions=NUM_ACTIONS, num_units=512, num_layers=3, style_units=32):
+    def __init__(self, num_actions=NUM_ACTIONS, num_units=512, style_units=32):
         super().__init__()
         self.num_units = num_units
         self.num_actions = num_actions
-        self.num_layers = num_layers
         self.style_units = style_units
 
         # Project input into distributed representation
         self.input_linear = nn.Linear(num_actions, self.num_units)
         # Project style into distributed representation
         self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
+        # Output layer
+        self.g_linear = nn.Linear(self.num_units, num_actions + 1)
+        self.d_linear = nn.Linear(self.num_units, 1)
 
-        self.layers = [RNNLayer(self.num_units, self.num_units) for i in range(num_layers)]
+        # Shared RNN base
+        self.rnn_base = RNNLayer(self.num_units, self.num_units)
+        self.rnn_g = [RNNLayer(self.num_units, self.num_units) for i in range(2)]
+        self.rnn_d = [RNNLayer(self.num_units, self.num_units)]
 
-        for i, layer in enumerate(self.layers):
-            self.add_module('rnn_layer_' + str(i), layer)
+        for i, layer in enumerate(self.rnn_g):
+            self.add_module('rnn_g_' + str(i), layer)
 
-    def forward(self, x, style, states=None):
+        for i, layer in enumerate(self.rnn_d):
+            self.add_module('rnn_d_' + str(i), layer)
+
+    def forward(self, x, style, states=None, no_g=False, no_d=False):
         # Distributed input representation
         x = F.tanh(self.input_linear(x))
         # Distributed style representation
@@ -35,36 +43,35 @@ class DeepJCommon(nn.Module):
 
         # Initialize state
         if states is None:
-            states = [None for _ in range(self.num_layers)]
+            states = [None for _ in range(4)]
 
-        for l, (layer, state) in enumerate(zip(self.layers, states)):
-            x, states[l] = layer(x, style, state)
-        return x, states
+        x, states[0] = self.rnn_base(x, style, states[0])
 
-class DeepJ(nn.Module):
-    """
-    The DeepJ neural network model architecture.
-    """
-    def __init__(self, num_actions=NUM_ACTIONS, num_units=512):
-        super().__init__()
-        self.num_units = num_units
-        self.num_actions = num_actions
+        if not no_g:
+            # Generator
+            g = x
+            g, states[1] = self.rnn_g[0](g, style, states[1])
+            g, states[2] = self.rnn_g[1](g, style, states[2])
+            g = self.g_linear(g)
 
-        self.common_module = DeepJCommon()
-        # Output layer
-        self.output_linear = nn.Linear(self.num_units, num_actions + 2)
+            # Split into value and policy outputs
+            value = g[:, :, 0]
+            policy = g[:, :, 1:]
 
-    def forward(self, x, style, states=None):
-        x, states = self.common_module(x, style, states)
-        x = self.output_linear(x)
+        if not no_d:
+            # Discriminator
+            d = x
+            d, states[3] = self.rnn_d[0](d, style, states[3])
+            # Discriminator evaluated based on the last time step
+            d = d[:, -1, :]
+            d = self.d_linear(d)
 
-        # Discriminator evaluated based on the last time step
-        discriminator = x[:, -1:, 1]
+        if no_g:
+            return d
+        if no_d:
+            return value, policy, states
 
-        # Split into value and policy outputs
-        value = x[:, :, 0]
-        policy = x[:, :, 2:]
-        return value, discriminator, policy, states
+        return value, policy, d, states
 
     def generate(self, x, style, states, temperature=1):
         """ Returns the probability of outputs """

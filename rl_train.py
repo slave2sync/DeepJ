@@ -40,14 +40,15 @@ def g_rollout(model, num_steps, batch_size=BATCH_SIZE):
 
     # Perform sequence generation #
     for step in range(num_steps):
+        # print(state)
         state_vec = torch.zeros(batch_size, NUM_ACTIONS) if state is None else one_hot_batch(state, NUM_ACTIONS)
         state_vec = state_vec.unsqueeze(1)
-        value, _, logit, memory = model(var(state_vec), None, memory)
+        value, policy, memory = model(var(state_vec), None, memory, no_d=True)
         value = value.squeeze(1)
-        logit = logit.squeeze(1)
+        policy = policy.squeeze(1)
 
-        prob = F.softmax(logit)
-        log_prob = F.log_softmax(logit)
+        prob = F.softmax(policy)
+        log_prob = F.log_softmax(policy)
 
         action = prob.multinomial().data
         log_prob = log_prob.gather(1, var(action))
@@ -102,13 +103,12 @@ def compute_d_loss(model, fake_seqs, real_seqs):
     real_seqs_hot = one_hot_seq(real_seqs, NUM_ACTIONS)
     # First have all the fake sequences, then have the real sequences
     input_batch = var(torch.cat((fake_seqs_hot, real_seqs_hot), dim=0))
-    _, d_output, p_output, _ = model(input_batch, None)
+    _, p_output, d_output, _ = model(input_batch, None)
 
     # Create classes the first half the batch are fake = 0. Second half are real = 1.
     d_targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
     d_loss = bce(d_output, d_targets)
 
-    # TODO: Modulate the MLE loss over time?
     real_p_output = p_output[-real_seqs.size(0):, :-1].contiguous().view(-1, NUM_ACTIONS)
     mle_targets = var(real_seqs[:, 1:].contiguous().view(-1))
     mle_loss = cel(real_p_output, mle_targets)
@@ -135,7 +135,7 @@ def compute_mle_loss(model, data, validate=False):
     # Feed it to the model
     inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=validate)
     targets = var(note_seq[:, 1:], volatile=validate)
-    _, _, policy, _ = model(inputs, styles, None)
+    _, policy, _ = model(inputs, styles, None, no_d=True)
 
     # Compute the loss.
     loss = cel(policy.contiguous().view(-1, NUM_ACTIONS), targets.view(-1))
@@ -194,7 +194,7 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             running_entropy = accumulate_running(running_entropy, entropy)
             running_acc = accumulate_running(running_acc, accuracy)
             
-            # TODO: Modulate the MLE loss over time?
+            # TODO: Modulate the MLE loss over time using some function?
             modulation = min(epoch / 1e5, 1)
             total_loss += mle_train_loss * (1 - modulation)
 
@@ -220,7 +220,7 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, val_loss=mle_loss, entropy=running_entropy, train_loss=mle_train_loss, m=modulation)
             tq.update(1)
 
-            if epoch % 200 == 0:
+            if epoch % 50 == 0:
                 # Statistic
                 mle_loss = sum(compute_mle_loss(model, data, validate=True).data[0] for data in  itertools.islice(val_generator(), VAL_STEPS)) / VAL_STEPS
                 mle_train_losses.append(mle_train_loss)
