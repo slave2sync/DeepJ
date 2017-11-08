@@ -153,6 +153,9 @@ def main():
     print('GPU: {}'.format(torch.cuda.is_available()))
     model = DeepJ()
 
+    # Windows pytorch doesn't support fast LSTM
+    torch.backends.cudnn = False
+
     if torch.cuda.is_available():
         # TODO: Windows Hack
         if torch.backends.cudnn.version() is None:
