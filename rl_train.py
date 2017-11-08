@@ -19,6 +19,9 @@ from model import *
 from torch.autograd import Variable
 from generate import Generation
 
+bce = nn.BCEWithLogitsLoss()
+cel = nn.CrossEntropyLoss()
+
 def g_rollout(model, num_steps, override_seqs=None, batch_size=BATCH_SIZE):
     """
     Rollout a sequence
@@ -96,37 +99,39 @@ def compute_rl_loss(generator, values, log_probs, R, num_steps):
     loss = torch.sum(policy_loss + 0.5 * value_loss)
     return mean_rewards.data[0], loss
 
-def compute_d_loss(discriminator, fake_seqs, real_seqs):
+def compute_d_loss(model, fake_seqs, real_seqs):
     """
     Computes loss from the discriminator
     """
-    discriminator.train()
-    criterion = nn.BCEWithLogitsLoss()
-
-    fake_seqs = one_hot_seq(torch.cat(fake_seqs, dim=1), NUM_ACTIONS)
-    real_seqs = one_hot_seq(real_seqs, NUM_ACTIONS)
-    input_batch = var(torch.cat((fake_seqs, real_seqs), dim=0))
-    _, outputs, _, _ = discriminator(input_batch, None)
+    fake_seqs_hot = one_hot_seq(torch.cat(fake_seqs, dim=1), NUM_ACTIONS)
+    real_seqs_hot = one_hot_seq(real_seqs, NUM_ACTIONS)
+    # First have all the fake sequences, then have the real sequences
+    input_batch = var(torch.cat((fake_seqs_hot, real_seqs_hot), dim=0))
+    _, d_output, p_output, _ = model(input_batch, None)
 
     # Create classes the first half the batch are fake = 0. Second half are real = 1.
-    targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
-    loss = criterion(outputs, targets)
+    d_targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
+    d_loss = bce(d_output, d_targets)
 
-    probs = F.sigmoid(outputs)
+    # TODO: Modulate the MLE loss over time?
+    real_p_output = p_output[-real_seqs.size(0):, :-1].contiguous().view(-1, NUM_ACTIONS)
+    mle_targets = var(real_seqs[:, 1:].contiguous().view(-1))
+    mle_loss = cel(real_p_output, mle_targets)
+
+    probs = F.sigmoid(d_output)
     log_probs = torch.log(probs)
     entropy = torch.mean(-probs * log_probs - (1 - probs) * torch.log(1 - probs))
-    accuracy = (probs.round() == targets).sum().data[0] / (BATCH_SIZE * 2)
+    accuracy = (probs.round() == d_targets).sum().data[0] / (BATCH_SIZE * 2)
 
     # TODO: Log prob or prob?
     reward = var(log_probs[:BATCH_SIZE].data)
 
-    return accuracy, reward, entropy.data[0], loss
+    return accuracy, reward, entropy.data[0], d_loss, mle_loss
 
-def compute_mle_loss(generator, data, validate=False):
+def compute_mle_loss(model, data, validate=False):
     """
     Computes the MLE loss of the generator
     """
-    criterion = nn.CrossEntropyLoss()
     # Convert all tensors into variables
     note_seq, styles = data
     # styles = var(one_hot_batch(styles, NUM_STYLES), volatile=validate)
@@ -135,10 +140,10 @@ def compute_mle_loss(generator, data, validate=False):
     # Feed it to the model
     inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=validate)
     targets = var(note_seq[:, 1:], volatile=validate)
-    _, _, output, _ = generator(inputs, styles, None)
+    _, _, policy, _ = model(inputs, styles, None)
 
     # Compute the loss.
-    loss = criterion(output.contiguous().view(-1, NUM_ACTIONS), targets.view(-1))
+    loss = cel(policy.contiguous().view(-1, NUM_ACTIONS), targets.view(-1))
     return loss
 
 def train(model, train_generator, val_generator, plot=True, gen_rate=0):
@@ -152,9 +157,11 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
         running_acc = None
         running_entropy = None
         target_steps = MIN_SEQ_LEN
+
         mle_loss = 0
         mle_train_loss = 0
         cl_counter = 0
+        avg_reward = 0
 
         mle_train_losses = []
         mle_losses = []
@@ -180,20 +187,18 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
                 
             num_steps = random.randint(MIN_SEQ_LEN, target_steps)
             
-            # TODO: Modulate the MLE loss over time?
-            mle_train_loss = compute_mle_loss(model, data, validate=False)
-            total_loss += mle_train_loss * 0.5
-            mle_train_loss = mle_train_loss.data[0]
-
             # Perform a rollout #
             fake_seqs, values, log_probs = g_rollout(model, num_steps)
 
             # Train the discriminator (and compute rewards)
             real_seqs = real_seqs[:, :num_steps]
-            accuracy, reward, entropy, d_loss = compute_d_loss(model, fake_seqs, real_seqs)
+            accuracy, reward, entropy, d_loss, mle_train_loss = compute_d_loss(model, fake_seqs, real_seqs)
             running_entropy = accumulate_running(running_entropy, entropy)
             running_acc = accumulate_running(running_acc, accuracy)
             
+            # TODO: Modulate the MLE loss over time?
+            total_loss += mle_train_loss
+
             # We don't train the generator if it is too good. Let G catch up.
             if running_acc < D_OPT_MAX_ACC:
                 total_loss += d_loss
@@ -209,6 +214,9 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             # TODO: Tune gradient clipping parameter?
             torch.nn.utils.clip_grad_norm(model.parameters(), GRADIENT_CLIP)
             opt.step()
+
+            ## Statistics ##
+            mle_train_loss = mle_train_loss.data[0]
 
             tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, val_loss=mle_loss, entropy=running_entropy, train_loss=mle_train_loss)
             tq.update(1)
