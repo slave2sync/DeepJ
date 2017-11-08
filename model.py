@@ -58,9 +58,11 @@ class DeepJ(nn.Module):
         x, states = self.common_module(x, style, states)
         x = self.output_linear(x)
 
+        # Discriminator evaluated based on the last time step
+        discriminator = x[:, -1:, 1]
+
         # Split into value and policy outputs
         value = x[:, :, 0]
-        discriminator = x[:, :, 1]
         policy = x[:, :, 2:]
         return value, discriminator, policy, states
 

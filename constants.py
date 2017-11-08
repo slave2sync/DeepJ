@@ -22,7 +22,7 @@ NUM_ACTIONS = VEL_OFFSET + VEL_QUANTIZATION
 
 # Trainin Parameters
 BATCH_SIZE = 64
-MIN_SEQ_LEN = 1
+MIN_SEQ_LEN = 8
 SEQ_LEN = 512 + 1
 # Maximum silence time in seconds
 SILENT_LENGTH = 3
@@ -30,7 +30,7 @@ GRADIENT_CLIP = 3
 # Learning rates.
 LR = 1e-3
 # Minimum number of epochs before leveling up cirriculum
-MIN_EPOCH_CL = 200
+MIN_EPOCH_CL = 100
 CL_THRESHOLD = 0.45
 D_OPT_MAX_ACC = 0.9
 G_OPT_MIN_ACC = 0.6

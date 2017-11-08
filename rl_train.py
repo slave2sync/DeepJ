@@ -180,13 +180,10 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
                 
             num_steps = random.randint(MIN_SEQ_LEN, target_steps)
             
-            # The higher the loss, the more MLE training we provide
-            mle_rate = max(int((1 / mle_train_loss) ** 3 * 300 if mle_train_loss > 0 else 1), 1)
-
-            if epoch % mle_rate == 0:
-                mle_train_loss = compute_mle_loss(model, data, validate=False)
-                total_loss += mle_train_loss
-                mle_train_loss = mle_train_loss.data[0]
+            # TODO: Modulate the MLE loss over time?
+            mle_train_loss = compute_mle_loss(model, data, validate=False)
+            total_loss += mle_train_loss * 0.5
+            mle_train_loss = mle_train_loss.data[0]
 
             # Perform a rollout #
             fake_seqs, values, log_probs = g_rollout(model, num_steps)
