@@ -62,8 +62,17 @@ def g_rollout(model, num_steps, override_seqs=None, batch_size=BATCH_SIZE):
         log_probs.append(log_prob)
     return states, values, log_probs
 
-def g_train(generator, optimizer, values, log_probs, R, num_steps):
-    generator.train()
+def compute_rl_loss(generator, values, log_probs, R, num_steps):
+    """
+    Computes the loss from reinforcement learning (G rollouts)
+    """
+    # TODO: Should we append the standardized R or after?
+    # Standardize rewards
+    mean_rewards = R.mean()
+    std_rewards = R.std()
+    R -= mean_rewards
+    if std_rewards.data[0] != 0:
+        R /= std_rewards
 
     values.append(R)
 
@@ -72,13 +81,6 @@ def g_train(generator, optimizer, values, log_probs, R, num_steps):
 
     batch_size = R.size(0)
     gae = var(torch.zeros(batch_size, 1))
-
-    # Standardize rewards
-    mean_rewards = R.mean()
-    std_rewards = R.std()
-    R -= mean_rewards
-    if std_rewards.data[0] != 0:
-        R /= std_rewards
 
     for i in reversed(range(num_steps)):
         R = DISCOUNT * R
@@ -92,20 +94,13 @@ def g_train(generator, optimizer, values, log_probs, R, num_steps):
         policy_loss -= log_probs[i] * gae
 
     loss = torch.sum(policy_loss + 0.5 * value_loss)
-    loss.backward()
-    # TODO: Tune gradient clipping parameter?
-    torch.nn.utils.clip_grad_norm(generator.parameters(), GRADIENT_CLIP)
+    return mean_rewards.data[0], loss
 
-    optimizer.step()
-    optimizer.zero_grad()
-    return mean_rewards.data[0]
-
-def d_train(discriminator, optimizer, fake_seqs, real_seqs, optimize=True):
+def compute_d_loss(discriminator, fake_seqs, real_seqs):
     """
-    Trains the generator
+    Computes loss from the discriminator
     """
     discriminator.train()
-    optimizer.zero_grad()
     criterion = nn.BCEWithLogitsLoss()
 
     fake_seqs = one_hot_seq(torch.cat(fake_seqs, dim=1), NUM_ACTIONS)
@@ -115,6 +110,7 @@ def d_train(discriminator, optimizer, fake_seqs, real_seqs, optimize=True):
 
     # Create classes the first half the batch are fake = 0. Second half are real = 1.
     targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
+    loss = criterion(outputs, targets)
 
     probs = F.sigmoid(outputs)
     log_probs = torch.log(probs)
@@ -124,12 +120,26 @@ def d_train(discriminator, optimizer, fake_seqs, real_seqs, optimize=True):
     # TODO: Log prob or prob?
     reward = var(log_probs[:BATCH_SIZE].data)
 
-    if optimize:
-        loss = criterion(outputs, targets)
-        loss.backward()
+    return accuracy, reward, entropy.data[0], loss
 
-        optimizer.step()
-    return accuracy, reward, entropy.data[0]
+def compute_mle_loss(generator, data, validate=False):
+    """
+    Computes the MLE loss of the generator
+    """
+    criterion = nn.CrossEntropyLoss()
+    # Convert all tensors into variables
+    note_seq, styles = data
+    # styles = var(one_hot_batch(styles, NUM_STYLES), volatile=validate)
+    styles = None # TODO
+
+    # Feed it to the model
+    inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=validate)
+    targets = var(note_seq[:, 1:], volatile=validate)
+    _, _, output, _ = generator(inputs, styles, None)
+
+    # Compute the loss.
+    loss = criterion(output.contiguous().view(-1, NUM_ACTIONS), targets.view(-1))
+    return loss
 
 def train(model, train_generator, val_generator, plot=True, gen_rate=0):
     # Construct optimizer
@@ -156,6 +166,10 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             cl_counter += 1
             real_seqs, styles = data
 
+            model.train()
+            opt.zero_grad()
+            total_loss = 0
+
             # Gradually increase the number of steps
             # if running_entropy is not None and running_entropy > CL_THRESHOLD and cl_counter > MIN_EPOCH_CL:
             if cl_counter > MIN_EPOCH_CL:
@@ -167,33 +181,44 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             num_steps = random.randint(MIN_SEQ_LEN, target_steps)
             
             # The higher the loss, the more MLE training we provide
-            mle_rate = int((1 / mle_train_loss) ** 3 * 300 if mle_train_loss > 0 else 1)
+            mle_rate = max(int((1 / mle_train_loss) ** 3 * 300 if mle_train_loss > 0 else 1), 1)
 
             if epoch % mle_rate == 0:
-                mle_train_loss = compute_mle_loss(model, data, opt, validate=False)
+                mle_train_loss = compute_mle_loss(model, data, validate=False)
+                total_loss += mle_train_loss
+                mle_train_loss = mle_train_loss.data[0]
 
             # Perform a rollout #
             fake_seqs, values, log_probs = g_rollout(model, num_steps)
 
             # Train the discriminator (and compute rewards)
             real_seqs = real_seqs[:, :num_steps]
-            # We don't train the generator if it is too good. Let G catch up.
-            optimize = running_acc is None or running_acc < D_OPT_MAX_ACC
-            accuracy, reward, entropy = d_train(model, opt, fake_seqs, real_seqs, optimize)
+            accuracy, reward, entropy, d_loss = compute_d_loss(model, fake_seqs, real_seqs)
             running_entropy = accumulate_running(running_entropy, entropy)
             running_acc = accumulate_running(running_acc, accuracy)
+            
+            # We don't train the generator if it is too good. Let G catch up.
+            if running_acc < D_OPT_MAX_ACC:
+                total_loss += d_loss
 
-            if running_acc is None or running_acc > G_OPT_MIN_ACC:
-                # Train the generator (if the discriminator is decent)
-                avg_reward = g_train(model, opt, values, log_probs, reward, num_steps)
+            # Train the generator (if the discriminator is decent)
+            if running_acc > G_OPT_MIN_ACC:
+                avg_reward, rl_loss = compute_rl_loss(model, values, log_probs, reward, num_steps)
                 running_reward = accumulate_running(running_reward, avg_reward)
+                total_loss += rl_loss
+
+            # Perform gradient updates
+            total_loss.backward()
+            # TODO: Tune gradient clipping parameter?
+            torch.nn.utils.clip_grad_norm(model.parameters(), GRADIENT_CLIP)
+            opt.step()
 
             tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, val_loss=mle_loss, entropy=running_entropy, train_loss=mle_train_loss)
             tq.update(1)
 
             if epoch % 200 == 0:
                 # Statistic
-                mle_loss = sum(compute_mle_loss(model, data, opt, validate=True) for data in  itertools.islice(val_generator(), VAL_STEPS)) / VAL_STEPS
+                mle_loss = sum(compute_mle_loss(model, data, validate=True).data[0] for data in  itertools.islice(val_generator(), VAL_STEPS)) / VAL_STEPS
                 mle_train_losses.append(mle_train_loss)
                 mle_losses.append(mle_loss)
                 all_rewards.append(avg_reward)
@@ -216,32 +241,6 @@ def plot_loss(validation_loss, name):
     plt.clf()
     plt.plot(validation_loss)
     plt.savefig(OUT_DIR + '/' + name)
-
-def compute_mle_loss(generator, data, optimizer, validate=False):
-    """
-    Computes the MLE loss of the generator
-    """
-    optimizer.zero_grad()
-    # generator.eval()
-    criterion = nn.CrossEntropyLoss()
-    # Convert all tensors into variables
-    note_seq, styles = data
-    # styles = var(one_hot_batch(styles, NUM_STYLES), volatile=validate)
-    styles = None # TODO
-
-    # Feed it to the model
-    inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=validate)
-    targets = var(note_seq[:, 1:], volatile=validate)
-    _, _, output, _ = generator(inputs, styles, None)
-
-    # Compute the loss.
-    loss = criterion(output.contiguous().view(-1, NUM_ACTIONS), targets.view(-1))
-
-    if not validate:
-        loss.backward()
-        optimizer.step()
-
-    return loss.data[0]
 
 def main():
     parser = argparse.ArgumentParser(description='Trains model')
