@@ -84,14 +84,20 @@ def sampler(data):
     if len(seqs) == 0:
         raise 'Insufficient training data.'
 
-    def sample(seq_len):
+    def sample(seq_len=SEQ_LEN):
         # Pick random sequence
         seq_id = random.randint(0, len(seqs) - 1)
+
+        # Tensor of scalar progress
+        progress = torch.arange(0, 1, 1 / (seq_len - 1))
+
         return (
             gen_to_tensor(augment(random_subseq(seqs[seq_id], seq_len))),
             # Need to retain the tensor object. Hence slicing is used.
-            torch.LongTensor(style_tags[seq_id:seq_id+1])
+            torch.LongTensor(style_tags[seq_id:seq_id+1]),
+            progress
         )
+
     return sample
 
 def batcher(sampler):
@@ -101,6 +107,7 @@ def batcher(sampler):
     def batch(batch_size=BATCH_SIZE, seq_len=SEQ_LEN):
         batch = [sampler(seq_len) for i in range(batch_size)]
         return [torch.stack(x) for x in zip(*batch)]
+        
     return batch 
 
 def random_subseq(sequence, seq_len):

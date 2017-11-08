@@ -129,13 +129,13 @@ def compute_loss(model, data, volatile=False):
     Trains the model on a single batch of sequence.
     """
     # Convert all tensors into variables
-    note_seq, styles = data
+    note_seq, styles, progress = data
     styles = var(one_hot_batch(styles, NUM_STYLES), volatile=volatile)
     
     # Feed it to the model
     inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=volatile)
     targets = var(note_seq[:, 1:], volatile=volatile)
-    output, _ = model(inputs, styles, None)
+    output, _ = model(inputs, styles, progress, None)
 
     # Compute the loss.
     loss = criterion(output.view(-1, NUM_ACTIONS), targets.view(-1))

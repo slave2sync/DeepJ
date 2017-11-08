@@ -29,7 +29,7 @@ class DeepJ(nn.Module):
         self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
         # self.style_layer = nn.Linear(self.style_units, self.num_units * self.num_layers)
 
-    def forward(self, x, style, states=None):
+    def forward(self, x, style, progress, states=None):
         batch_size = x.size(0)
         seq_len = x.size(1)
 
@@ -38,6 +38,9 @@ class DeepJ(nn.Module):
         # style = F.tanh(self.style_layer(style))
         style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units)
         x = torch.cat((x, style), dim=2)
+        # Concat progress with style
+        progress = progress.unsqueeze(2)
+        x = torch.cat((x, progress), 2)
 
         ## Process RNN ##
         # if states is None:
