@@ -39,7 +39,7 @@ def g_rollout(model, num_steps, override_seqs=None, batch_size=BATCH_SIZE):
     for step in range(num_steps):
         state_vec = torch.zeros(batch_size, NUM_ACTIONS) if state is None else one_hot_batch(state, NUM_ACTIONS)
         state_vec = state_vec.unsqueeze(1)
-        value, logit, memory = model(var(state_vec), None, memory)
+        value, _, logit, memory = model(var(state_vec), None, memory)
         value = value.squeeze(1)
         logit = logit.squeeze(1)
 
@@ -111,7 +111,7 @@ def d_train(discriminator, optimizer, fake_seqs, real_seqs, optimize=True):
     fake_seqs = one_hot_seq(torch.cat(fake_seqs, dim=1), NUM_ACTIONS)
     real_seqs = one_hot_seq(real_seqs, NUM_ACTIONS)
     input_batch = var(torch.cat((fake_seqs, real_seqs), dim=0))
-    outputs, _ = discriminator(input_batch, None)
+    _, outputs, _, _ = discriminator(input_batch, None)
 
     # Create classes the first half the batch are fake = 0. Second half are real = 1.
     targets = var(torch.cat((torch.zeros(BATCH_SIZE, 1), torch.ones(BATCH_SIZE, 1))))
@@ -131,10 +131,9 @@ def d_train(discriminator, optimizer, fake_seqs, real_seqs, optimize=True):
         optimizer.step()
     return accuracy, reward, entropy.data[0]
 
-def train(generator, discriminator, train_generator, val_generator, plot=True, gen_rate=0):
+def train(model, train_generator, val_generator, plot=True, gen_rate=0):
     # Construct optimizer
-    g_opt = optim.Adam(generator.parameters(), lr=G_LR)
-    d_opt = optim.Adam(discriminator.parameters(), lr=D_LR)
+    opt = optim.Adam(model.parameters(), lr=LR)
     train_gen = train_generator()
 
     with tqdm() as tq:
@@ -157,7 +156,8 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
             real_seqs, styles = data
 
             # Gradually increase the number of steps
-            if running_entropy is not None and running_entropy > CL_THRESHOLD and cl_counter > MIN_EPOCH_CL:
+            # if running_entropy is not None and running_entropy > CL_THRESHOLD and cl_counter > MIN_EPOCH_CL:
+            if cl_counter > MIN_EPOCH_CL:
                 # Only increase timestep if the discriminator
                 # is uncertain about the generator's output (convergence)
                 target_steps = min(target_steps + 1, SEQ_LEN)
@@ -166,22 +166,22 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
             num_steps = random.randint(MIN_SEQ_LEN, target_steps)
             
             if epoch % 50 == 0:
-                mle_train_loss = compute_mle_loss(generator, data, g_opt, validate=False)
+                mle_train_loss = compute_mle_loss(model, data, opt, validate=False)
 
             # Perform a rollout #
-            fake_seqs, values, log_probs = g_rollout(generator, num_steps)
+            fake_seqs, values, log_probs = g_rollout(model, num_steps)
 
             # Train the discriminator (and compute rewards)
             real_seqs = real_seqs[:, :num_steps]
             # We don't train the generator if it is too good. Let G catch up.
             optimize = running_acc is None or running_acc < D_OPT_MAX_ACC
-            accuracy, reward, entropy = d_train(discriminator, d_opt, fake_seqs, real_seqs, optimize)
+            accuracy, reward, entropy = d_train(model, opt, fake_seqs, real_seqs, optimize)
             running_entropy = accumulate_running(running_entropy, entropy)
             running_acc = accumulate_running(running_acc, accuracy)
 
             if running_acc is None or running_acc > G_OPT_MIN_ACC:
                 # Train the generator (if the discriminator is decent)
-                avg_reward = g_train(generator, g_opt, values, log_probs, reward, num_steps)
+                avg_reward = g_train(model, opt, values, log_probs, reward, num_steps)
                 running_reward = accumulate_running(running_reward, avg_reward)
 
             tq.set_postfix(len=target_steps, reward=running_reward, d_acc=running_acc, val_loss=mle_loss, entropy=running_entropy, train_loss=mle_train_loss)
@@ -189,7 +189,7 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
 
             if epoch % 200 == 0:
                 # Statistic
-                mle_loss = sum(compute_mle_loss(generator, data, g_opt, validate=True) for data in  itertools.islice(val_generator(), VAL_STEPS)) / VAL_STEPS
+                mle_loss = sum(compute_mle_loss(model, data, opt, validate=True) for data in  itertools.islice(val_generator(), VAL_STEPS)) / VAL_STEPS
                 mle_losses.append(mle_loss)
                 all_rewards.append(avg_reward)
                 all_accs.append(accuracy)
@@ -199,7 +199,7 @@ def train(generator, discriminator, train_generator, val_generator, plot=True, g
                     plot_loss(all_accs, 'accuracy')
                     plot_loss(mle_losses, 'mle_loss')
 
-            if epoch % 2000 == 0:
+            if epoch % 1000 == 0:
                 # Save model
                 torch.save(generator.state_dict(), OUT_DIR + '/generator_' + str(epoch) + '.pt')
                 torch.save(discriminator.state_dict(), OUT_DIR + '/discriminator_' + str(epoch) + '.pt')
@@ -227,7 +227,7 @@ def compute_mle_loss(generator, data, optimizer, validate=False):
     # Feed it to the model
     inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=validate)
     targets = var(note_seq[:, 1:], volatile=validate)
-    _, output, _ = generator(inputs, styles, None)
+    _, _, output, _ = generator(inputs, styles, None)
 
     # Compute the loss.
     loss = criterion(output.contiguous().view(-1, NUM_ACTIONS), targets.view(-1))
@@ -247,18 +247,14 @@ def main():
 
     print('=== Loading Model ===')
     print('GPU: {}'.format(torch.cuda.is_available()))
-    common = DeepJCommon()
-    generator = DeepJG(common)
-    discriminator = DeepJD(common)
+    model = DeepJ()
 
     if torch.cuda.is_available():
-        # TODO
-        torch.backends.cudnn.enabled = False
-        generator.cuda()
-        discriminator.cuda()
+        # torch.backends.cudnn.enabled = False
+        model.cuda()
 
     if args.path:
-        generator.load_state_dict(torch.load(args.path))
+        model.load_state_dict(torch.load(args.path))
         print('Restored model from checkpoint.')
 
     print()
@@ -283,7 +279,7 @@ def main():
     print()
 
     print('=== Training ===')
-    train(generator, discriminator, train_generator, val_generator, plot=not args.noplot, gen_rate=args.gen)
+    train(model, train_generator, val_generator, plot=not args.noplot, gen_rate=args.gen)
 
 if __name__ == '__main__':
     main()

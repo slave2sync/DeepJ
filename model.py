@@ -41,18 +41,18 @@ class DeepJCommon(nn.Module):
             x, states[l] = layer(x, style, state)
         return x, states
 
-class DeepJG(nn.Module):
+class DeepJ(nn.Module):
     """
     The DeepJ neural network model architecture.
     """
-    def __init__(self, common_module, num_actions=NUM_ACTIONS, num_units=512):
+    def __init__(self, num_actions=NUM_ACTIONS, num_units=512):
         super().__init__()
         self.num_units = num_units
         self.num_actions = num_actions
 
-        self.common_module = common_module
+        self.common_module = DeepJCommon()
         # Output layer
-        self.output_linear = nn.Linear(self.num_units, num_actions + 1)
+        self.output_linear = nn.Linear(self.num_units, num_actions + 2)
 
     def forward(self, x, style, states=None):
         x, states = self.common_module(x, style, states)
@@ -60,36 +60,17 @@ class DeepJG(nn.Module):
 
         # Split into value and policy outputs
         value = x[:, :, 0]
-        policy = x[:, :, 1:]
-        return value, policy, states
+        discriminator = x[:, :, 1]
+        policy = x[:, :, 2:]
+        return value, discriminator, policy, states
 
     def generate(self, x, style, states, temperature=1):
         """ Returns the probability of outputs """
-        _, x, states = self.forward(x, style, states)
+        _, _, x, states = self.forward(x, style, states)
         seq_len = x.size(1)
         x = x.view(-1, self.num_actions)
         x = F.softmax(x / temperature)
         x = x.view(-1, seq_len, self.num_actions)
-        return x, states
-
-class DeepJD(nn.Module):
-    """
-    The DeepJ neural network model architecture.
-    """
-    def __init__(self, common_module, num_actions=NUM_ACTIONS, num_units=512):
-        super().__init__()
-        self.num_units = num_units
-        self.num_actions = num_actions
-
-        self.common_module = common_module
-        # Output layer
-        self.output_linear = nn.Linear(self.num_units, 1)
-
-    def forward(self, x, style, states=None):
-        x, states = self.common_module(x, style, states)
-        # Only consider last time step
-        x = x[:, -1, :]
-        x = self.output_linear(x)
         return x, states
 
 class RNNLayer(nn.Module):

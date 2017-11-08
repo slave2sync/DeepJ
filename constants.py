@@ -28,8 +28,7 @@ SEQ_LEN = 512 + 1
 SILENT_LENGTH = 3
 GRADIENT_CLIP = 3
 # Learning rates.
-G_LR = 1e-4
-D_LR = 1e-3
+LR = 1e-3
 # Minimum number of epochs before leveling up cirriculum
 MIN_EPOCH_CL = 500
 CL_THRESHOLD = 0.45
