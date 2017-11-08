@@ -22,7 +22,7 @@ from generate import Generation
 bce = nn.BCEWithLogitsLoss()
 cel = nn.CrossEntropyLoss()
 
-def g_rollout(model, num_steps, override_seqs=None, batch_size=BATCH_SIZE):
+def g_rollout(model, num_steps, batch_size=BATCH_SIZE):
     """
     Rollout a sequence
     """
@@ -49,12 +49,7 @@ def g_rollout(model, num_steps, override_seqs=None, batch_size=BATCH_SIZE):
         prob = F.softmax(logit)
         log_prob = F.log_softmax(logit)
 
-        # Sample actions
-        if override_seqs is not None:
-            # Forcefully sample the right sequence to get positive rewards
-            action = override_seqs[:, step:step+1]
-        else:
-            action = prob.multinomial().data
+        action = prob.multinomial().data
         log_prob = log_prob.gather(1, var(action))
 
         # Action become's next state
