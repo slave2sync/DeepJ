@@ -234,7 +234,7 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
                     plot_loss(all_rewards, 'reward')
                     plot_loss(all_accs, 'accuracy')
 
-            if epoch % 1000 == 0:
+            if epoch % 500 == 0:
                 # Save model
                 torch.save(model.state_dict(), OUT_DIR + '/model_' + str(epoch) + '.pt')
                 # Generate an output sequence
