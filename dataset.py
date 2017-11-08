@@ -88,11 +88,15 @@ def sampler(data, seq_len=SEQ_LEN):
     r = list(range(len(seqs)))
     random.shuffle(r)
 
+    # Tensor of scalar progress
+    progress = torch.arange(0, 1, 1 / (seq_len - 1))
+
     for seq_id in r:
         yield (
             gen_to_tensor(augment(random_subseq(seqs[seq_id], seq_len))),
             # Need to retain the tensor object. Hence slicing is used.
-            torch.LongTensor(style_tags[seq_id:seq_id+1])
+            torch.LongTensor(style_tags[seq_id:seq_id+1]),
+            progress
         )
 
 def batcher(sampler, batch_size=BATCH_SIZE):
@@ -103,7 +107,7 @@ def batcher(sampler, batch_size=BATCH_SIZE):
 
     for sample in sampler:
         batch.append(sample)
-        
+
         if len(batch) == batch_size:
             # Convert batch
             yield [torch.stack(x) for x in zip(*batch)]
