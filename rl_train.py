@@ -146,6 +146,7 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
         mle_train_loss = 0
         cl_counter = 0
 
+        mle_train_losses = []
         mle_losses = []
         all_rewards = []
         all_accs = []
@@ -165,7 +166,10 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
                 
             num_steps = random.randint(MIN_SEQ_LEN, target_steps)
             
-            if epoch % 50 == 0:
+            # The higher the loss, the more MLE training we provide
+            mle_rate = int((1 / mle_train_loss) ** 3 * 300 if mle_train_loss > 0 else 1)
+
+            if epoch % mle_rate == 0:
                 mle_train_loss = compute_mle_loss(model, data, opt, validate=False)
 
             # Perform a rollout #
@@ -190,21 +194,22 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             if epoch % 200 == 0:
                 # Statistic
                 mle_loss = sum(compute_mle_loss(model, data, opt, validate=True) for data in  itertools.islice(val_generator(), VAL_STEPS)) / VAL_STEPS
+                mle_train_losses.append(mle_train_loss)
                 mle_losses.append(mle_loss)
                 all_rewards.append(avg_reward)
                 all_accs.append(accuracy)
 
                 if plot:
+                    plot_loss(mle_losses, 'mle_loss')
+                    plot_loss(mle_train_losses, 'mle_train_loss')
                     plot_loss(all_rewards, 'reward')
                     plot_loss(all_accs, 'accuracy')
-                    plot_loss(mle_losses, 'mle_loss')
 
             if epoch % 1000 == 0:
                 # Save model
-                torch.save(generator.state_dict(), OUT_DIR + '/generator_' + str(epoch) + '.pt')
-                torch.save(discriminator.state_dict(), OUT_DIR + '/discriminator_' + str(epoch) + '.pt')
+                torch.save(model.state_dict(), OUT_DIR + '/model_' + str(epoch) + '.pt')
                 # Generate an output sequence
-                Generation(generator).export(name='epoch_' + str(epoch))
+                Generation(model).export(name='epoch_' + str(epoch))
 
 def plot_loss(validation_loss, name):
     # Draw graph

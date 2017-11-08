@@ -30,7 +30,7 @@ GRADIENT_CLIP = 3
 # Learning rates.
 LR = 1e-3
 # Minimum number of epochs before leveling up cirriculum
-MIN_EPOCH_CL = 500
+MIN_EPOCH_CL = 200
 CL_THRESHOLD = 0.45
 D_OPT_MAX_ACC = 0.9
 G_OPT_MIN_ACC = 0.5
