@@ -195,18 +195,20 @@ def train(model, train_generator, val_generator, plot=True, gen_rate=0):
             running_acc = accumulate_running(running_acc, accuracy)
             
             # TODO: Modulate the MLE loss over time using some function?
-            modulation = min(epoch / 1e5, 1)
+            modulation = 0 # min(epoch / 1e4, 1)
             (mle_train_loss * (1 - modulation)).backward(retain_graph=True)
 
             # We don't train the generator if it is too good. Let G catch up.
-            if running_acc < D_OPT_MAX_ACC:
+            if running_acc < D_OPT_MAX_ACC and epoch < 1e4:
                 d_loss.backward()
 
             # Train the generator (if the discriminator is decent)
+            """
             if running_acc > G_OPT_MIN_ACC:
                 avg_reward, rl_loss = compute_rl_loss(model, values, log_probs, reward, num_steps)
                 running_reward = accumulate_running(running_reward, avg_reward)
                 (rl_loss * modulation).backward()
+            """
 
             # Perform gradient updates
             # TODO: Tune gradient clipping parameter?
