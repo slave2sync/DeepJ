@@ -78,6 +78,7 @@ class Generation():
         self.step_count += 1
 
     def generate(self, seq_len=1000, show_progress=True):
+        self.model.eval()
         r = trange(seq_len) if show_progress else range(seq_len)
 
         for _ in r:
@@ -114,7 +115,7 @@ def main():
     print('GPU: {}'.format(torch.cuda.is_available()))
     settings['force_cpu'] = True
     
-    model = DeepJG()
+    model = DeepJ()
 
     if args.path:
         model.load_state_dict(torch.load(args.path))
