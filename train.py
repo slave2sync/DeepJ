@@ -134,7 +134,7 @@ def compute_loss(model, data, teach_prob, volatile=False):
     # Convert all tensors into variables
     note_seq, styles, progress = data
     styles = var(one_hot_batch(styles, NUM_STYLES), volatile=volatile)
-    progress = var(progress, volatile=volatile)
+    progress = var(progress[:, :-1], volatile=volatile)
 
     loss = 0
     seq_len = note_seq.size()[1]

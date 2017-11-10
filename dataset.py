@@ -48,13 +48,14 @@ def process(style_seqs, seq_len=SEQ_LEN):
     # Flatten into compositions list
     seqs = [s for y in style_seqs for s in y]
     style_tags = torch.LongTensor([s for s, y in enumerate(style_seqs) for x in y])
-    return seqs, style_tags
+    progresses = [progress_tensor(s) for s in seqs]
+    return seqs, style_tags, progresses
 
 def validation_split(data, split=0.1):
     """
     Splits the data iteration list into training and validation indices
     """
-    seqs, style_tags = data
+    seqs, style_tags, progresses = data
 
     # Shuffle sequences randomly
     r = list(range(len(seqs)))
@@ -72,14 +73,17 @@ def validation_split(data, split=0.1):
 
     train_style_tags = [style_tags[i] for i in train_indicies]
     val_style_tags = [style_tags[i] for i in val_indicies]
+
+    train_progresses = [progresses[i] for i in train_indicies]
+    val_progresses = [progresses[i] for i in val_indicies]
     
-    return (train_seqs, train_style_tags), (val_seqs, val_style_tags)
+    return (train_seqs, train_style_tags, train_progresses), (val_seqs, val_style_tags, val_progresses)
 
 def sampler(data, seq_len=SEQ_LEN):
     """
     Generates sequences of data.
     """
-    seqs, style_tags = data
+    seqs, style_tags, progresses = data
 
     if len(seqs) == 0:
         raise 'Insufficient training data.'
@@ -88,16 +92,25 @@ def sampler(data, seq_len=SEQ_LEN):
     r = list(range(len(seqs)))
     random.shuffle(r)
 
-    # Tensor of scalar progress
-    progress = torch.arange(0, 1, 1 / (seq_len - 1))
-
     for seq_id in r:
+        subseq, start_index, end_index = random_subseq(seqs[seq_id], seq_len)
+        progress = progresses[seq_id]
+
         yield (
-            gen_to_tensor(augment(random_subseq(seqs[seq_id], seq_len))),
+            gen_to_tensor(augment(subseq)),
             # Need to retain the tensor object. Hence slicing is used.
             torch.LongTensor(style_tags[seq_id:seq_id+1]),
-            progress
+            progress[start_index:end_index]
         )
+
+def progress_tensor(seq):
+    progress = []
+    curr = 0
+    for s in seq:
+        if s >= TIME_OFFSET and s < TIME_OFFSET + TIME_QUANTIZATION:
+            curr += TICK_BINS[s - TIME_OFFSET] / TICKS_PER_SEC
+        progress.append(curr)
+    return torch.FloatTensor(progress) / curr
 
 def batcher(sampler, batch_size=BATCH_SIZE):
     """
@@ -166,7 +179,9 @@ def random_subseq(sequence, seq_len):
                 i += 1
                 current += 1
 
-    return generator()
+    start_index = index
+    end_index = index + seq_len
+    return generator(), start_index, end_index
 
 def augment(sequence):
     """
