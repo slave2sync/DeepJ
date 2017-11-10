@@ -131,6 +131,7 @@ def compute_loss(model, data, volatile=False):
     # Convert all tensors into variables
     note_seq, styles, progress = data
     styles = var(one_hot_batch(styles, NUM_STYLES), volatile=volatile)
+    progress = var(progress[:, :-1], volatile=volatile)
     
     # Feed it to the model
     inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=volatile)
