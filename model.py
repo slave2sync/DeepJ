@@ -55,9 +55,9 @@ class DeepJ(nn.Module):
         x = self.output_linear(x)
         return x, states
 
-    def generate(self, x, style, states, temperature=1):
+    def generate(self, x, style, progress, states, temperature=1):
         """ Returns the probability of outputs """
-        x, states = self.forward(x, style, states)
+        x, states = self.forward(x, style, progress, states)
         seq_len = x.size(1)
         x = x.view(-1, NUM_ACTIONS)
         x = F.softmax(x / temperature)
