@@ -30,7 +30,7 @@ class Generation():
         self.default_temp = default_temp
         self.temperature = self.default_temp
 
-        # Progress between 0 and 1
+        # Progress of generated music between 0 and 1
         self.progress = 0
 
         # Model parametrs
@@ -90,7 +90,7 @@ class Generation():
         
         self.step_count += 1
 
-    def generate(self, seq_len=10, show_progress=True):
+    def generate(self, seq_len=30):
         self.model.eval()
         while self.progress <= 1:
             self.step(seq_len)
@@ -99,17 +99,17 @@ class Generation():
         best_seq = best[1]
         return np.array(best_seq)
 
-    def export(self, name='output', seq_len=10, show_progress=True):
+    def export(self, name='output', seq_len=30):
         """
         Export into a MIDI file.
         """
-        seq = self.generate(seq_len, show_progress=show_progress)
+        seq = self.generate(seq_len)
         save_midi(name, seq)
 
 def main():
     parser = argparse.ArgumentParser(description='Generates music.')
     parser.add_argument('--path', help='Path to model file')
-    parser.add_argument('--length', default=10, type=int, help='Length of generation in seconds')
+    parser.add_argument('--length', default=30, type=int, help='Length of generation in seconds')
     parser.add_argument('--style', default=None, type=int, nargs='+', help='Styles to mix together')
     parser.add_argument('--temperature', default=1, type=float, help='Temperature of generation')
     parser.add_argument('--beam', default=1, type=int, help='Beam size')
