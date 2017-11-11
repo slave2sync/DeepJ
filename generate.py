@@ -32,14 +32,17 @@ class Generation():
         # How much time of silence
         self.silent_time = SILENT_LENGTH
 
+        # Progress between 0 and 1
+        self.progress = 0
+
         # Model parametrs
         self.beam = [
-            (1, tuple(), None)
+            (1, tuple(), None, self.progress)
         ]
         self.avg_seq_prob = 1
         self.step_count = 0
 
-    def step(self):
+    def step(self, seq_len):
         """
         Generates the next set of beams
         """
@@ -50,14 +53,18 @@ class Generation():
         sum_seq_prob = 0
 
         # Iterate through the beam
-        for prev_prob, evts, state in self.beam:
+        for prev_prob, evts, state, progress in self.beam:
             if len(evts) > 0:
                 prev_event = var(to_torch(one_hot(evts[-1], NUM_ACTIONS)), volatile=True).unsqueeze(0)
+                if evts[-1] >= TIME_OFFSET and evts[-1] < TIME_OFFSET + TIME_QUANTIZATION:
+                    progress += (TICK_BINS[evts[-1] - TIME_OFFSET] / TICKS_PER_SEC) / seq_len
+                    self.progress = progress
             else:
                 prev_event = var(torch.zeros((1, NUM_ACTIONS)), volatile=True)
 
             prev_event = prev_event.unsqueeze(1)
-            probs, new_state = self.model.generate(prev_event, style, state, temperature=self.temperature)
+            progress_tensor = var(torch.FloatTensor([progress])).unsqueeze(1)
+            probs, new_state = self.model.generate(prev_event, style, progress_tensor, state, temperature=self.temperature)
             probs = probs[0].cpu().data.numpy()
 
             for _ in range(self.beam_size):
@@ -68,7 +75,7 @@ class Generation():
                 
                 # Create next beam
                 seq_prob = prev_prob * probs[0, event]
-                new_beam.append((seq_prob / self.avg_seq_prob, evts + (event,), new_state))
+                new_beam.append((seq_prob / self.avg_seq_prob, evts + (event,), new_state, progress))
                 sum_seq_prob += seq_prob
 
         self.avg_seq_prob = sum_seq_prob / len(new_beam)
@@ -76,17 +83,15 @@ class Generation():
         self.beam = heapq.nlargest(self.beam_size, new_beam, key=lambda x: x[0])
         self.step_count += 1
 
-    def generate(self, seq_len=1000, show_progress=True):
-        r = trange(seq_len) if show_progress else range(seq_len)
-
-        for _ in r:
-            self.step()
+    def generate(self, seq_len=10, show_progress=True):
+        while self.progress <= 1:
+            self.step(seq_len)
 
         best = max(self.beam, key=lambda x: x[0])
         best_seq = best[1]
         return np.array(best_seq)
 
-    def export(self, name='output', seq_len=1000, show_progress=True):
+    def export(self, name='output', seq_len=10, show_progress=True):
         """
         Export into a MIDI file.
         """
@@ -96,7 +101,7 @@ class Generation():
 def main():
     parser = argparse.ArgumentParser(description='Generates music.')
     parser.add_argument('--path', help='Path to model file')
-    parser.add_argument('--length', default=1000, type=int, help='Length of generation')
+    parser.add_argument('--length', default=10, type=int, help='Length of generation in seconds')
     parser.add_argument('--style', default=None, type=int, nargs='+', help='Styles to mix together')
     parser.add_argument('--temperature', default=1, type=float, help='Temperature of generation')
     parser.add_argument('--beam', default=1, type=int, help='Beam size')
