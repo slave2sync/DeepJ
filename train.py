@@ -155,7 +155,9 @@ def main():
     model = DeepJ()
 
     # Windows pytorch doesn't support fast LSTM
-    torch.backends.cudnn.enabled = False
+    # torch.backends.cudnn.enabled = False
+    # Windows hack to speed up training time
+    torch.backends.cudnn.version = lambda: 6000
 
     if torch.cuda.is_available():
         # TODO: Windows Hack
