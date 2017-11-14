@@ -25,7 +25,7 @@ BATCH_SIZE = 64
 SEQ_LEN = 512
 GRADIENT_CLIP = 3
 # The number of train generator cycles per sequence
-TRAIN_CYCLES = 500
+TRAIN_CYCLES = 100
 VAL_CYCLES = int(TRAIN_CYCLES * 0.05)
 LEARNING_RATE = 1e-3
 

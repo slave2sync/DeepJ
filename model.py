@@ -21,7 +21,7 @@ class DeepJ(nn.Module):
         self.style_units = style_units
 
         # RNN
-        self.rnns = [GRUCell(NUM_ACTIONS + style_units if i == 0 else self.num_units, self.num_units) for i in range(num_layers)]
+        self.rnns = [RNNCell(NUM_ACTIONS + style_units if i == 0 else self.num_units, self.num_units) for i in range(num_layers)]
         # self.rnn = nn.LSTM(NUM_ACTIONS + style_units, self.num_units, num_layers, batch_first=True)
 
         self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS)
@@ -70,7 +70,7 @@ class DeepJ(nn.Module):
         x = x.view(-1, seq_len, NUM_ACTIONS)
         return x, states
 
-class GRUCell(nn.Module):
+class RNNCell(nn.Module):
     def __init__(self, input_size, hidden_size, bias=True):
         super().__init__()
         self.input_size = input_size
@@ -121,5 +121,6 @@ class LayerNorm(nn.Module):
 
     def forward(self, x):
         mean = x.mean(-1, keepdim=True)
-        std = x.std(-1, keepdim=True)
-        return self.gamma * (x - mean) / (std + self.eps) + self.beta
+        x = x - mean
+        std = (torch.abs(x)).mean(-1, keepdim=True)
+        return self.gamma * x / (std + self.eps) + self.beta
