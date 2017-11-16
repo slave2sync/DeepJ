@@ -38,6 +38,9 @@ MIN_SCHEDULE_PROB = 1#0.5
 STYLES = ['data/baroque', 'data/classical', 'data/romantic', 'data/modern']
 NUM_STYLES = len(STYLES)
 
+# Categories for progress
+CATEGORY_LEVEL = 3
+
 # Paths
 OUT_DIR = 'out'
 CACHE_DIR = 'out/cache'
