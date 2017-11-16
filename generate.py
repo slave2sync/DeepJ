@@ -34,12 +34,16 @@ class Generation():
 
         # Model parametrs
         self.beam = [
-            (1, tuple(), None)
+            (1, tuple(), None, one_hot(0, CATEGORY_LEVEL))
         ]
         self.avg_seq_prob = 1
         self.step_count = 0
 
-    def step(self):
+        self.progress_index = 0
+        # Position of the 1 in progress one hot vector
+        self.progress_one = 0
+
+    def step(self, seq_len):
         """
         Generates the next set of beams
         """
@@ -49,15 +53,25 @@ class Generation():
         new_beam = []
         sum_seq_prob = 0
 
+        progress_step = seq_len // CATEGORY_LEVEL
+        progress_max_index = progress_step * CATEGORY_LEVEL
+
         # Iterate through the beam
-        for prev_prob, evts, state in self.beam:
+        for prev_prob, evts, state, progress in self.beam:
             if len(evts) > 0:
                 prev_event = var(to_torch(one_hot(evts[-1], NUM_ACTIONS)), volatile=True).unsqueeze(0)
             else:
                 prev_event = var(torch.zeros((1, NUM_ACTIONS)), volatile=True)
 
+            # Update progress one hot vector
+            if self.progress_index > 0 and self.progress_index < progress_max_index and self.progress_index % progress_step == 0:
+                self.progress_one += 1
+            progress = one_hot(self.progress_one, CATEGORY_LEVEL)
+            self.progress_index += 1
+
             prev_event = prev_event.unsqueeze(1)
-            probs, new_state = self.model.generate(prev_event, style, state, temperature=self.temperature)
+            progress_tensor = var(torch.FloatTensor([progress])).unsqueeze(0)
+            probs, new_state = self.model.generate(prev_event, style, progress_tensor, state, temperature=self.temperature)
             probs = probs[0].cpu().data.numpy()
 
             for _ in range(self.beam_size):
@@ -68,7 +82,7 @@ class Generation():
                 
                 # Create next beam
                 seq_prob = prev_prob * probs[0, event]
-                new_beam.append((seq_prob / self.avg_seq_prob, evts + (event,), new_state))
+                new_beam.append((seq_prob / self.avg_seq_prob, evts + (event,), new_state, progress))
                 sum_seq_prob += seq_prob
 
         self.avg_seq_prob = sum_seq_prob / len(new_beam)
@@ -80,7 +94,7 @@ class Generation():
         r = trange(seq_len) if show_progress else range(seq_len)
 
         for _ in r:
-            self.step()
+            self.step(seq_len)
 
         best = max(self.beam, key=lambda x: x[0])
         best_seq = best[1]
