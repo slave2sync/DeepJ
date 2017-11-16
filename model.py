@@ -18,7 +18,7 @@ class DeepJ(nn.Module):
         # RNN
         self.rnns = [nn.LSTM(self.num_units, self.num_units, batch_first=True) for i in range(num_layers)]
 
-        self.input_linear = nn.Linear(NUM_ACTIONS + 3, self.num_units)
+        self.input_linear = nn.Linear(NUM_ACTIONS + CATEGORY_LEVEL, self.num_units)
         self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS)
         self.softmax = nn.Softmax()
 

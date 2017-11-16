@@ -39,7 +39,7 @@ STYLES = ['data/baroque', 'data/classical', 'data/romantic', 'data/modern']
 NUM_STYLES = len(STYLES)
 
 # Categories for progress
-CATEGORY_LEVEL = 3
+CATEGORY_LEVEL = 8
 
 # Paths
 OUT_DIR = 'out'
