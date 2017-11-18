@@ -21,7 +21,7 @@ VEL_OFFSET = TIME_OFFSET + TIME_QUANTIZATION
 NUM_ACTIONS = VEL_OFFSET + VEL_QUANTIZATION
 
 # Trainin Parameters
-BATCH_SIZE = 64
+BATCH_SIZE = 16#64
 SEQ_LEN = 512
 GRADIENT_CLIP = 10
 # The number of train generator cycles per sequence

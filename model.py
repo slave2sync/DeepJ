@@ -70,21 +70,26 @@ class RNNCell(nn.Module):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
-        self.bias = bias
-        self.w_ih = Parameter(torch.Tensor(3 * hidden_size, input_size))
-        self.w_hh = Parameter(torch.Tensor(3 * hidden_size, hidden_size))
-        if bias:
-            self.b_ih = Parameter(torch.Tensor(3 * hidden_size))
-            self.b_hh = Parameter(torch.Tensor(3 * hidden_size))
-        else:
-            self.register_parameter('b_ih', None)
-            self.register_parameter('b_hh', None)
-        self.reset_parameters()
+        # self.bias = bias
+        # self.w_ih = Parameter(torch.Tensor(3 * hidden_size, input_size))
+        # self.w_hh = Parameter(torch.Tensor(3 * hidden_size, hidden_size))
+        # if bias:
+        #     self.b_ih = Parameter(torch.Tensor(3 * hidden_size))
+        #     self.b_hh = Parameter(torch.Tensor(3 * hidden_size))
+        # else:
+        #     self.register_parameter('b_ih', None)
+        #     self.register_parameter('b_hh', None)
 
-        self.l1 = LayerNorm(3 * hidden_size)
-        self.l2 = LayerNorm(3 * hidden_size)
-        self.l3 = LayerNorm(hidden_size)
-        self.l4 = LayerNorm(hidden_size)
+        # self.l1 = LayerNorm(3 * hidden_size)
+        # self.l2 = LayerNorm(3 * hidden_size)
+        # self.l3 = LayerNorm(hidden_size)
+        # self.l4 = LayerNorm(hidden_size)
+        self.gru = nn.GRUCell(input_size, hidden_size, bias)
+        self.hidden_att_layer = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.influence_layer = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.merge_scalar = nn.Linear(hidden_size, 1, bias=False)
+        self.combine_layer = nn.Linear(2 * hidden_size, hidden_size)
+        self.reset_parameters()
 
     def reset_parameters(self):
         stdv = 1.0 / math.sqrt(self.hidden_size)
@@ -98,23 +103,41 @@ class RNNCell(nn.Module):
         if hidden is None:
             hidden = var(torch.zeros(batch_size, self.hidden_size))
 
-        all_h = []
+        output_h = []
+        prev_h = [hidden]
+
         for t in range(seq_len):
+            """
             # GRU Section #
-            gi = self.l1(F.linear(x[:, t], self.w_ih, self.b_ih))
-            gh = self.l2(F.linear(hidden, self.w_hh, self.b_hh))
+            # gi = self.l1(F.linear(x[:, t], self.w_ih, self.b_ih))
+            gi = F.linear(x[:, t], self.w_ih, self.b_ih)
+            # gh = self.l2(F.linear(hidden, self.w_hh, self.b_hh))
+            gh = F.linear(hidden, self.w_hh, self.b_hh)
             i_r, i_i, i_n = gi.chunk(3, 1)
             h_r, h_i, h_n = gh.chunk(3, 1)
 
             resetgate = F.sigmoid(i_r + h_r)
             inputgate = F.sigmoid(i_i + h_i)
-            newgate = F.tanh(self.l3(i_n) + resetgate * self.l4(h_n))
+            # newgate = F.tanh(self.l3(i_n) + resetgate * self.l4(h_n))
+            newgate = F.tanh(i_n + resetgate * h_n)
             hidden = newgate + inputgate * (hidden - newgate)
+            """
+            hidden = self.gru(x[:, t], hidden)
 
-            all_h.append(hidden)
+            # Attention #
+            stacked_h = torch.stack(prev_h[::3], dim=1)
+            hidd_features = self.hidden_att_layer(hidden).unsqueeze(1).expand_as(stacked_h)
+            att_features = F.tanh(stacked_h + hidd_features)
+            attention_mask = F.softmax(self.merge_scalar(att_features)).squeeze(2)
+            context = torch.bmm(attention_mask.unsqueeze(1), stacked_h).squeeze(1)
+            hidden = F.tanh(self.combine_layer(torch.cat((hidden, context), dim=1)))
 
-        all_h = torch.stack(all_h, dim=1)
-        return all_h
+            prev_h.append(self.influence_layer(hidden))
+            output_h.append(hidden)
+
+        # Ignore the first hidden vector
+        output_h = torch.stack(output_h, dim=1)
+        return output_h
 
 class LayerNorm(nn.Module):
 
