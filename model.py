@@ -14,16 +14,17 @@ class DeepJ(nn.Module):
     """
     The DeepJ neural network model architecture.
     """
-    def __init__(self, num_units=512, num_layers=3, style_units=32):
+    def __init__(self, num_units=512, num_layers=1, style_units=32):
         super().__init__()
         self.num_units = num_units
         self.num_layers = num_layers
         self.style_units = style_units
 
         # RNN
-        self.rnns = [RNNCell(NUM_ACTIONS + style_units if i == 0 else self.num_units, self.num_units) for i in range(num_layers)]
+        self.rnns = [RNNCell(self.num_units, self.num_units) for i in range(num_layers)]
         # self.rnn = nn.LSTM(NUM_ACTIONS + style_units, self.num_units, num_layers, batch_first=True)
 
+        self.input_linear = nn.Linear(NUM_ACTIONS + style_units, self.num_units)
         self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS)
 
         for i, rnn in enumerate(self.rnns):
@@ -42,6 +43,8 @@ class DeepJ(nn.Module):
         # style = F.tanh(self.style_layer(style))
         style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units)
         x = torch.cat((x, style), dim=2)
+
+        x = F.relu(self.input_linear(x))
 
         ## Process RNN ##
         if states is None:
@@ -66,7 +69,7 @@ class DeepJ(nn.Module):
         return x, states
 
 class RNNCell(nn.Module):
-    def __init__(self, input_size, hidden_size, bias=True):
+    def __init__(self, input_size, hidden_size, attention_size=64, bias=True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -84,11 +87,17 @@ class RNNCell(nn.Module):
         # self.l2 = LayerNorm(3 * hidden_size)
         # self.l3 = LayerNorm(hidden_size)
         # self.l4 = LayerNorm(hidden_size)
-        self.gru = nn.GRUCell(input_size, hidden_size, bias)
-        self.hidden_att_layer = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.influence_layer = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.merge_scalar = nn.Linear(hidden_size, 1, bias=False)
+
+        self.rnn_layer = nn.Linear(input_size + hidden_size, hidden_size, bias)
+        self.query_layer = nn.Linear(hidden_size, attention_size)
+        self.influence_layer = nn.Linear(hidden_size, attention_size)
+        self.merge_scalar = nn.Linear(attention_size, 1)
         self.combine_layer = nn.Linear(2 * hidden_size, hidden_size)
+        self.ln = LayerNorm(hidden_size)
+
+        self.decay = 0.95
+        self.fast_lr = 0.5
+
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -102,9 +111,11 @@ class RNNCell(nn.Module):
 
         if hidden is None:
             hidden = var(torch.zeros(batch_size, self.hidden_size))
-
-        output_h = []
-        prev_h = [hidden]
+        
+        # TODO: Inference will not work
+        cache_decay = var(torch.Tensor([self.decay ** (seq_len - i) for i in range(seq_len)])).unsqueeze(1)
+        output_h = [hidden]
+        # prev_h = [self.influence_layer(hidden)]
 
         for t in range(seq_len):
             """
@@ -122,21 +133,38 @@ class RNNCell(nn.Module):
             newgate = F.tanh(i_n + resetgate * h_n)
             hidden = newgate + inputgate * (hidden - newgate)
             """
-            hidden = self.gru(x[:, t], hidden)
-
+            preact = self.rnn_layer(torch.cat((x[:, t], hidden), dim=1))
+            hidden = F.relu(preact)
+            
             # Attention #
-            stacked_h = torch.stack(prev_h[::3], dim=1)
-            hidd_features = self.hidden_att_layer(hidden).unsqueeze(1).expand_as(stacked_h)
-            att_features = F.tanh(stacked_h + hidd_features)
-            attention_mask = F.softmax(self.merge_scalar(att_features)).squeeze(2)
-            context = torch.bmm(attention_mask.unsqueeze(1), stacked_h).squeeze(1)
-            hidden = F.tanh(self.combine_layer(torch.cat((hidden, context), dim=1)))
+            # stacked_prev_h = torch.stack(prev_h, dim=1)
+            # hidd_features = self.query_layer(hidden).unsqueeze(1).expand_as(stacked_prev_h)
+            # att_features = F.relu(stacked_prev_h + hidd_features)
+            # attention_mask = F.softmax(self.merge_scalar(att_features)).squeeze(2)
+            
+            # stacked_output_h = torch.stack(output_h, dim=1)
+            # context = torch.bmm(attention_mask.unsqueeze(1), stacked_output_h).squeeze(1)
+            # hidden = F.tanh(self.combine_layer(torch.cat((hidden, context), dim=1)))
+            
+            # prev_h.append(self.influence_layer(hidden))
 
-            prev_h.append(self.influence_layer(hidden))
+            # Fast Weights #
+            # decayed_h = [(0.95 ** (t - i)) * h for i, h in enumerate(output_h)]
+            furthest_input = min(t + 1, 128)
+            stacked_output_h = torch.stack(output_h[-furthest_input:], dim=1)
+            attention = torch.bmm(stacked_output_h, hidden.unsqueeze(2)).squeeze(2)
+            # print(cache_decay[-(t + 1):], stacked_output_h.size())
+            # The input furthest back in time to consider
+            decayed_h = torch.mul(stacked_output_h, cache_decay[-furthest_input:])
+            a_h = self.fast_lr * torch.bmm(attention.unsqueeze(1), decayed_h).squeeze(1)
+
+            hidden = F.relu(self.ln(preact + a_h))
+            # print(hidden)
+
             output_h.append(hidden)
 
         # Ignore the first hidden vector
-        output_h = torch.stack(output_h, dim=1)
+        output_h = torch.stack(output_h[1:], dim=1)
         return output_h
 
 class LayerNorm(nn.Module):

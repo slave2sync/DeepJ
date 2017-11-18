@@ -21,7 +21,7 @@ VEL_OFFSET = TIME_OFFSET + TIME_QUANTIZATION
 NUM_ACTIONS = VEL_OFFSET + VEL_QUANTIZATION
 
 # Trainin Parameters
-BATCH_SIZE = 16#64
+BATCH_SIZE = 32
 SEQ_LEN = 512
 GRADIENT_CLIP = 10
 # The number of train generator cycles per sequence
@@ -30,7 +30,7 @@ VAL_CYCLES = int(TRAIN_CYCLES * 0.05)
 LEARNING_RATE = 1e-3
 
 # Style
-STYLES = ['data/baroque', 'data/classical', 'data/romantic', 'data/modern']
+STYLES = ['data/baroque']#, 'data/classical', 'data/romantic', 'data/modern']
 NUM_STYLES = len(STYLES)
 
 # Paths
