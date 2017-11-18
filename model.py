@@ -14,7 +14,7 @@ class DeepJ(nn.Module):
     """
     The DeepJ neural network model architecture.
     """
-    def __init__(self, num_units=512, num_layers=1, style_units=32):
+    def __init__(self, num_units=256, num_layers=3, style_units=32):
         super().__init__()
         self.num_units = num_units
         self.num_layers = num_layers
@@ -69,7 +69,7 @@ class DeepJ(nn.Module):
         return x, states
 
 class RNNCell(nn.Module):
-    def __init__(self, input_size, hidden_size, attention_size=64, bias=True):
+    def __init__(self, input_size, hidden_size, bias=True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -89,10 +89,10 @@ class RNNCell(nn.Module):
         # self.l4 = LayerNorm(hidden_size)
 
         self.rnn_layer = nn.Linear(input_size + hidden_size, hidden_size, bias)
-        self.query_layer = nn.Linear(hidden_size, attention_size)
-        self.influence_layer = nn.Linear(hidden_size, attention_size)
-        self.merge_scalar = nn.Linear(attention_size, 1)
-        self.combine_layer = nn.Linear(2 * hidden_size, hidden_size)
+        # self.query_layer = nn.Linear(hidden_size, attention_size)
+        # self.influence_layer = nn.Linear(hidden_size, attention_size)
+        # self.merge_scalar = nn.Linear(attention_size, 1)
+        # self.combine_layer = nn.Linear(2 * hidden_size, hidden_size)
         self.ln = LayerNorm(hidden_size)
 
         self.decay = 0.95
