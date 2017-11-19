@@ -109,8 +109,8 @@ def progress_tensor(seq):
     for s in seq:
         if s >= TIME_OFFSET and s < TIME_OFFSET + TIME_QUANTIZATION:
             curr += TICK_BINS[s - TIME_OFFSET] / TICKS_PER_SEC
-        progress.append(curr)
-    return torch.FloatTensor(progress) / curr
+        progress.append([np.cos(curr), np.sin(curr)])
+    return torch.FloatTensor(progress)
 
 def batcher(sampler, batch_size=BATCH_SIZE):
     """

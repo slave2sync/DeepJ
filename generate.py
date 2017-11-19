@@ -34,6 +34,8 @@ class Generation():
 
         # Progress of generated music between 0 and 1
         self.progress = 0
+        # Clock input that resets every second
+        self.progress_clock = [0, 0]
 
         # Model parametrs
         self.beam = [
@@ -57,13 +59,15 @@ class Generation():
             if len(evts) > 0:
                 prev_event = var(to_torch(one_hot(evts[-1], NUM_ACTIONS)), volatile=True).unsqueeze(0)
                 if evts[-1] >= TIME_OFFSET and evts[-1] < TIME_OFFSET + TIME_QUANTIZATION:
-                    progress += (TICK_BINS[evts[-1] - TIME_OFFSET] / TICKS_PER_SEC) / seq_len
+                    progress_in_sec = (TICK_BINS[evts[-1] - TIME_OFFSET] / TICKS_PER_SEC)
+                    progress += progress_in_sec / seq_len
                     self.progress = progress
+                    self.progress_clock = [np.cos(progress_in_sec), np.sin(progress_in_sec)]
             else:
                 prev_event = var(torch.zeros((1, NUM_ACTIONS)), volatile=True)
 
             prev_event = prev_event.unsqueeze(1)
-            progress_tensor = var(torch.FloatTensor([progress])).unsqueeze(1)
+            progress_tensor = var(torch.FloatTensor([self.progress_clock])).unsqueeze(0)
             probs, new_state = self.model.generate(prev_event, style, progress_tensor, state, temperature=self.temperature)
             probs = probs[0].cpu().data.numpy()
 
