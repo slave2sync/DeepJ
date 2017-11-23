@@ -18,7 +18,7 @@ class DeepJ(nn.Module):
 
         # RNN
         # self.rnns = [nn.LSTM((NUM_ACTIONS + style_units) if i == 0 else self.num_units, self.num_units, batch_first=True) for i in range(num_layers)]
-        self.rnn = nn.LSTM(NUM_ACTIONS + style_units, self.num_units, num_layers, batch_first=True)
+        self.rnn = nn.LSTM(NUM_ACTIONS + style_units + 1, self.num_units, num_layers, batch_first=True)
 
         self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS)
 
