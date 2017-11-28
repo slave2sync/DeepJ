@@ -129,14 +129,15 @@ def compute_loss(model, data, volatile=False):
     Trains the model on a single batch of sequence.
     """
     # Convert all tensors into variables
-    note_seq, styles, progress = data
+    note_seq, styles, progress_scalar, progress_category = data
     styles = var(one_hot_batch(styles, NUM_STYLES), volatile=volatile)
-    progress = var(progress[:, :-1], volatile=volatile)
+    progress_scalar = var(progress_scalar[:, :-1], volatile=volatile)
+    progress_category = var(progress_category[:, :-1], volatile=volatile)
     
     # Feed it to the model
     inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=volatile)
     targets = var(note_seq[:, 1:], volatile=volatile)
-    output, _ = model(inputs, styles, progress, None)
+    output, _ = model(inputs, styles, progress_scalar, progress_category, None)
 
     # Compute the loss.
     loss = criterion(output.view(-1, NUM_ACTIONS), targets.view(-1))
@@ -154,14 +155,10 @@ def main():
     print('GPU: {}'.format(torch.cuda.is_available()))
     model = DeepJ()
 
-    # Windows pytorch doesn't support fast LSTM
-    # torch.backends.cudnn.enabled = False
-    # Windows hack to speed up training time
-    # torch.backends.cudnn.version = lambda: 6000
-
     if torch.cuda.is_available():
-        # TODO: Windows Hack
+        # TODO: Windows Hack b/c Windows pytorch doesn't support fast LSTM
         if torch.backends.cudnn.version() is None:
+            # Windows hack to speed up training time
             torch.backends.cudnn.version = lambda: 6000
         model.cuda()
 

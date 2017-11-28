@@ -18,7 +18,7 @@ class DeepJ(nn.Module):
 
         # RNN
         # self.rnns = [nn.LSTM((NUM_ACTIONS + style_units) if i == 0 else self.num_units, self.num_units, batch_first=True) for i in range(num_layers)]
-        self.rnn = nn.LSTM(NUM_ACTIONS + style_units + 1, self.num_units, num_layers, batch_first=True)
+        self.rnn = nn.LSTM(NUM_ACTIONS + style_units + CATEGORY_LEVELS + 1, self.num_units, num_layers, batch_first=True)
 
         self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS)
 
@@ -29,7 +29,7 @@ class DeepJ(nn.Module):
         self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
         # self.style_layer = nn.Linear(self.style_units, self.num_units * self.num_layers)
 
-    def forward(self, x, style, progress, states=None):
+    def forward(self, x, style, progress_scalar, progress_category, states=None):
         batch_size = x.size(0)
         seq_len = x.size(1)
 
@@ -38,9 +38,10 @@ class DeepJ(nn.Module):
         # style = F.tanh(self.style_layer(style))
         style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units)
         x = torch.cat((x, style), dim=2)
-        # Concat progress with style
-        progress = progress.unsqueeze(2)
-        x = torch.cat((x, progress), 2)
+        # Concat scalar progress with style
+        x = torch.cat((x, progress_scalar.unsqueeze(2)), 2)
+        # Concat categorical progress with style
+        x = torch.cat((x, progress_category), 2)
 
         ## Process RNN ##
         # if states is None:
@@ -55,9 +56,9 @@ class DeepJ(nn.Module):
         x = self.output_linear(x)
         return x, states
 
-    def generate(self, x, style, progress, states, temperature=1):
+    def generate(self, x, style, progress_scalar, progress_category, states, temperature=1):
         """ Returns the probability of outputs """
-        x, states = self.forward(x, style, progress, states)
+        x, states = self.forward(x, style, progress_scalar, progress_category, states)
         seq_len = x.size(1)
         x = x.view(-1, NUM_ACTIONS)
         x = F.softmax(x / temperature)

@@ -48,14 +48,15 @@ def process(style_seqs):
     # Flatten into compositions list
     seqs = [s for y in style_seqs for s in y]
     style_tags = torch.LongTensor([s for s, y in enumerate(style_seqs) for x in y])
-    progresses = [progress_tensor(s) for s in seqs]
-    return seqs, style_tags, progresses
+    progresses_scalar = [progress_tensor_scalar(s) for s in seqs]
+    progresses_category = [progress_tensor_category(s) for s in seqs]
+    return seqs, style_tags, progresses_scalar, progresses_category
 
 def validation_split(data, split=0.05):
     """
     Splits the data iteration list into training and validation indices
     """
-    seqs, style_tags, progresses = data
+    seqs, style_tags, progresses_scalar, progresses_category = data
 
     # Shuffle sequences randomly
     r = list(range(len(seqs)))
@@ -74,16 +75,19 @@ def validation_split(data, split=0.05):
     train_style_tags = [style_tags[i] for i in train_indicies]
     val_style_tags = [style_tags[i] for i in val_indicies]
 
-    train_progresses = [progresses[i] for i in train_indicies]
-    val_progresses = [progresses[i] for i in val_indicies]
+    train_progresses_scalar = [progresses_scalar[i] for i in train_indicies]
+    val_progresses_scalar = [progresses_scalar[i] for i in val_indicies]
+
+    train_progresses_category = [progresses_category[i] for i in train_indicies]
+    val_progresses_category = [progresses_category[i] for i in val_indicies]
     
-    return (train_seqs, train_style_tags, train_progresses), (val_seqs, val_style_tags, val_progresses)
+    return (train_seqs, train_style_tags, train_progresses_scalar, train_progresses_category), (val_seqs, val_style_tags, val_progresses_scalar, val_progresses_category)
 
 def sampler(data):
     """
     Generates sequences of data.
     """
-    seqs, style_tags, progresses = data
+    seqs, style_tags, progresses_scalar, progresses_category = data
 
     if len(seqs) == 0:
         raise 'Insufficient training data.'
@@ -93,17 +97,19 @@ def sampler(data):
         seq_id = random.randint(0, len(seqs) - 1)
 
         subseq, start_index, end_index = random_subseq(seqs[seq_id], seq_len)
-        progress = progresses[seq_id]
+        progress_scalar = progresses_scalar[seq_id]
+        progress_category = progresses_category[seq_id]
 
         return (
             gen_to_tensor(augment(subseq)),
             # Need to retain the tensor object. Hence slicing is used.
             torch.LongTensor(style_tags[seq_id:seq_id+1]),
-            progress[start_index:end_index]
+            progress_scalar[start_index:end_index],
+            progress_category[start_index:end_index]
         )
     return sample
 
-def progress_tensor(seq):
+def progress_tensor_scalar(seq):
     progress = []
     curr = 0
     for s in seq:
@@ -111,6 +117,21 @@ def progress_tensor(seq):
             curr += TICK_BINS[s - TIME_OFFSET] / TICKS_PER_SEC
         progress.append(curr)
     return torch.FloatTensor(progress) / curr
+
+def progress_tensor_category(seq):
+    """
+    Create vector of progress categories: beginning, middle, end
+    """
+    levels = CATEGORY_LEVELS + 2
+    step = len(seq) // levels
+    progress = np.zeros((len(seq), CATEGORY_LEVELS))
+    for c in range(0, levels, 2):
+        start = c * step
+        end = start + step
+        progress[start:end, c // 2] = 1
+    # Edge case where if seq len is not cleanly divided by category level and last remainder rows are not assigned a category
+    progress[-(len(seq) % levels):, CATEGORY_LEVELS - 1] = 1
+    return torch.FloatTensor(progress)
 
 def batcher(sampler):
     """

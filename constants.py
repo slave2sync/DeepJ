@@ -33,6 +33,9 @@ LEARNING_RATE = 1e-3
 STYLES = ['data/baroque', 'data/classical', 'data/romantic', 'data/modern']
 NUM_STYLES = len(STYLES)
 
+# Categories for progress
+CATEGORY_LEVELS = 3
+
 # Paths
 OUT_DIR = 'out'
 CACHE_DIR = 'out/cache'

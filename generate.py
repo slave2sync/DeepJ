@@ -31,11 +31,14 @@ class Generation():
         self.temperature = self.default_temp
 
         # Progress of generated music between 0 and 1
-        self.progress = 0
+        self.progress_scalar = 0
+        self.levels = CATEGORY_LEVELS + 2
+        # Culmulative amount of time in generated song
+        self.time_passed = 0
 
         # Model parametrs
         self.beam = [
-            (1, tuple(), None, self.progress)
+            (1, tuple(), None, self.progress_scalar, one_hot(0, CATEGORY_LEVELS))
         ]
         self.avg_seq_prob = 1
         self.step_count = 0
@@ -51,19 +54,34 @@ class Generation():
         new_beam = []
         sum_seq_prob = 0
 
+        time_step = seq_len // self.levels
+
         # Iterate through the beam
-        for prev_prob, evts, state, progress in self.beam:
+        for prev_prob, evts, state, progress_scalar, progress_category in self.beam:
             if len(evts) > 0:
                 prev_event = var(to_torch(one_hot(evts[-1], NUM_ACTIONS)), volatile=True).unsqueeze(0)
                 if evts[-1] >= TIME_OFFSET and evts[-1] < TIME_OFFSET + TIME_QUANTIZATION:
-                    progress += (TICK_BINS[evts[-1] - TIME_OFFSET] / TICKS_PER_SEC) / seq_len
-                    self.progress = progress
+                    time = TICK_BINS[evts[-1] - TIME_OFFSET] / TICKS_PER_SEC
+                    self.time_passed += time
+                    progress_scalar += time / seq_len
+                    self.progress_scalar = progress_scalar
+                    # Update categorical progress one hot vector
+                    if self.time_passed > 0 and self.time_passed < time_step:
+                        progress_category = one_hot(0, CATEGORY_LEVELS)
+                    elif self.time_passed > 2 * time_step and self.time_passed < (2 * time_step) + time_step:
+                        progress_category = one_hot(1, CATEGORY_LEVELS)
+                    elif self.time_passed > 4 * time_step and self.time_passed < seq_len:
+                        progress_category = one_hot(2, CATEGORY_LEVELS)
+                    else:
+                        # TODO: fix edge case where last progress vector is 0's instead of [0, 0, 1]
+                        progress_category = np.zeros(CATEGORY_LEVELS)
             else:
                 prev_event = var(torch.zeros((1, NUM_ACTIONS)), volatile=True)
-
+            
             prev_event = prev_event.unsqueeze(1)
-            progress_tensor = var(torch.FloatTensor([progress])).unsqueeze(1)
-            probs, new_state = self.model.generate(prev_event, style, progress_tensor, state, temperature=self.temperature)
+            progress_scalar_tensor = var(torch.FloatTensor([progress_scalar])).unsqueeze(1)
+            progress_category_tensor = var(torch.FloatTensor([progress_category])).unsqueeze(0)
+            probs, new_state = self.model.generate(prev_event, style, progress_scalar_tensor, progress_category_tensor, state, temperature=self.temperature)
             probs = probs.squeeze(1)
 
             for _ in range(self.beam_size):
@@ -74,7 +92,7 @@ class Generation():
                 # Create next beam
                 seq_prob = prev_prob * probs.data[0, event]
                 # Boost the sequence probability by the average
-                new_beam.append((seq_prob / self.avg_seq_prob, evts + (event,), new_state, progress))
+                new_beam.append((seq_prob / self.avg_seq_prob, evts + (event,), new_state, progress_scalar, progress_category))
                 sum_seq_prob += seq_prob
 
         self.avg_seq_prob = sum_seq_prob / len(new_beam)
@@ -92,7 +110,7 @@ class Generation():
 
     def generate(self, seq_len=30):
         self.model.eval()
-        while self.progress <= 1:
+        while self.progress_scalar <= 1:
             self.step(seq_len)
 
         best = max(self.beam, key=lambda x: x[0])
