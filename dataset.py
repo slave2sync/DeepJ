@@ -20,6 +20,7 @@ def load(styles=STYLES):
     Loads all music styles into a list of compositions
     """
     style_seqs = []
+    styles = [y for x in styles for y in x]
     for style in styles:
         # Parallel process all files into a list of music sequences
         style_seq = []

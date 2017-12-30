@@ -29,8 +29,30 @@ VAL_CYCLES = int(TRAIN_CYCLES * 0.05)
 LEARNING_RATE = 1e-3
 
 # Style
-STYLES = ['data/baroque', 'data/classical', 'data/romantic', 'data/modern']
-NUM_STYLES = len(STYLES)
+GENRE = ['classical', 'jazz', 'ragtime', 'rock']
+STYLES = [
+    [
+        'data/classical/bach',
+        'data/classical/beethoven',
+        'data/classical/chopin',
+        'data/classical/debussy',
+        'data/classical/mozart'
+    ],
+    [
+        'data/jazz/ellington',
+        'data/jazz/evans'
+    ],
+    [
+        'data/ragtime/joplin',
+        'data/ragtime/lamb',
+        'data/ragtime/scott'
+    ],
+    [
+        'data/rock/joel',
+        'data/rock/john'
+    ]
+]
+NUM_STYLES = sum(len(s) for s in STYLES)
 
 # Paths
 OUT_DIR = 'out'
