@@ -121,3 +121,11 @@ def augment(sequence):
 
     # Perform transposition (consider only notes)
     return (evt + transpose if evt < TIME_OFFSET else evt for evt in sequence)
+
+def compute_genre(genre_id):
+    """ Computes a vector that represents a particular genre """
+    genre_hot = np.zeros((NUM_STYLES,))
+    start_index = sum(len(s) for i, s in enumerate(STYLES) if i < genre_id)
+    styles_in_genre = len(STYLES[genre_id])
+    genre_hot[start_index:start_index + styles_in_genre] = 1 / styles_in_genre
+    return genre_hot

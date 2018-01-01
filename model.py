@@ -57,6 +57,7 @@ class DeepJ(nn.Module):
         x, states = self.forward(x, style, states)
         seq_len = x.size(1)
         x = x.view(-1, NUM_ACTIONS)
-        x = F.softmax(x / temperature)
+        # 2d matrix = softmax dim 1
+        x = F.softmax(x / temperature, dim=1)
         x = x.view(-1, seq_len, NUM_ACTIONS)
         return x, states
