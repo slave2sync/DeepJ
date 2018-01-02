@@ -10,7 +10,7 @@ class DeepJ(nn.Module):
     """
     The DeepJ neural network model architecture.
     """
-    def __init__(self, num_units=512, num_layers=3, style_units=32):
+    def __init__(self, num_units=512, num_layers=3, style_units=16):
         super().__init__()
         self.num_units = num_units
         self.num_layers = num_layers
@@ -34,7 +34,7 @@ class DeepJ(nn.Module):
         seq_len = x.size(1)
 
         # Distributed style representation
-        style = self.style_linear(style)
+        style = F.tanh(self.style_linear(style))
         # style = F.tanh(self.style_layer(style))
         style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units)
         x = torch.cat((x, style), dim=2)
