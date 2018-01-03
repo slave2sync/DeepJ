@@ -136,6 +136,12 @@ LEARNING_RATE = 1e-3
 # ]
 
 GENRE = ['classical', 'jazz', 'ragtime', 'rock']
+"""
+baroque => 1, 8, 16
+classical => 4, 9, 12, 
+modern => 2, 3, 13, 18, 20
+romantic => 0, 5, 6, 7, 10, 11, 14, 17, 19
+"""
 STYLES = [
     [
         'data/classical/albeniz',
@@ -171,8 +177,10 @@ STYLES = [
         'data/ragtime/joplin',
         'data/ragtime/lamb',
         'data/ragtime/morton',
+        'data/ragtime/paull',
         'data/ragtime/scott',
-        'data/ragtime/turpin'
+        'data/ragtime/turpin',
+        'data/ragtime/wenrich'
     ],
     [
         'data/rock/joel',
