@@ -28,6 +28,7 @@ class DeepJ(nn.Module):
         # Style
         self.style_linear = nn.Linear(NUM_STYLES, self.style_units)
         # self.style_layer = nn.Linear(self.style_units, self.num_units * self.num_layers)
+        self.dropout = nn.Dropout()
 
     def forward(self, x, style, states=None):
         batch_size = x.size(0)

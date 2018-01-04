@@ -146,17 +146,21 @@ STYLES = [
     [
         'data/classical/albeniz',
         'data/classical/bach',
+        'data/classical/balakirev',
         'data/classical/barber',
         'data/classical/bartok',
         'data/classical/beethoven',
         'data/classical/brahms',
         'data/classical/chopin',
+        'data/classical/clementi',
         'data/classical/debussy',
+        'data/classical/granados',
         'data/classical/handel',
         'data/classical/haydn',
         'data/classical/liszt',
         'data/classical/mendelssohn',
         'data/classical/mozart',
+        'data/classical/paganini',
         'data/classical/prokofiev',
         'data/classical/rachmaninoff',
         'data/classical/ravel',
@@ -164,12 +168,14 @@ STYLES = [
         'data/classical/schubert',
         'data/classical/scriabin',
         'data/classical/shostakovich',
-        'data/classical/stravinsky'
+        'data/classical/stravinsky',
+        'data/classical/tchaikovsky'
     ],
     [
         'data/jazz/ellington',
         'data/jazz/evans',
-        'data/jazz/mckenzie'
+        'data/jazz/mckenzie',
+        'data/jazz/tatum'
     ],
     [
         'data/ragtime/blake',
