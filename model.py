@@ -35,7 +35,7 @@ class DeepJ(nn.Module):
         seq_len = x.size(1)
 
         # Distributed style representation
-        style = self.dropout(F.tanh(self.style_linear(style)))
+        style = self.style_linear(style)
         # style = F.tanh(self.style_layer(style))
         style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units)
         x = torch.cat((x, style), dim=2)
