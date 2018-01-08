@@ -51,7 +51,7 @@ class DeepJ(nn.Module):
         # GLOBAL STYLE
         for l, rnn in enumerate(self.rnns):
             x, states[l] = rnn(x, states[l])
-            Style integration
+            # Style integration
             x = x * style[:, l * self.num_units:(l + 1) * self.num_units].unsqueeze(1).expand(-1, seq_len, -1)
 
         x = self.output_linear(x)
