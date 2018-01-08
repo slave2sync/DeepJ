@@ -30,6 +30,7 @@ LEARNING_RATE = 1e-3
 
 # Style
 
+# DATA V4
 # GENRE = ['baroque', 'classical', 'modern', 'romantic']
 # STYLES = [
 #     [
@@ -135,13 +136,14 @@ LEARNING_RATE = 1e-3
 #     ]
 # ]
 
-GENRE = ['classical', 'jazz', 'ragtime', 'rock']
-"""
-baroque => 1, 8, 16
-classical => 4, 9, 12, 
-modern => 2, 3, 13, 18, 20
-romantic => 0, 5, 6, 7, 10, 11, 14, 17, 19
-"""
+# DATA V5
+# GENRE = ['classical', 'jazz', 'ragtime', 'rock']
+# """
+# baroque => 1, 11, 20
+# classical => 2, 5, 8, 10, 12, 15, 16
+# modern => 3, 4, 17, 24
+# romantic => 0, 6, 7, 9, 13, 14, 18, 19, 21, 22, 23, 25
+# """
 # STYLES = [
 #     [
 #         'data/classical/albeniz',
@@ -194,8 +196,64 @@ romantic => 0, 5, 6, 7, 10, 11, 14, 17, 19
 #     ]
 # ]
 # NUM_STYLES = sum(len(s) for s in STYLES)
-STYLES = ['data/classical', 'data/jazz', 'data/ragtime', 'data/rock']
-NUM_STYLES = len(STYLES)
+# STYLES = ['data/classical', 'data/jazz', 'data/rock']
+# NUM_STYLES = len(STYLES)
+
+# DATA V6
+GENRE = ['baroque', 'classical', 'cocktail', 'jazz', 'ragtime', 'romantic']
+STYLES = [
+    [
+        'data/baroque/bach',
+        'data/baroque/handel',
+        'data/baroque/scarlatti'
+    ],
+    [
+        'data/classical/balakirev',
+        'data/classical/beethoven',
+        'data/classical/clementi',
+        'data/classical/granados',
+        'data/classical/haydn',
+        'data/classical/mozart',
+        'data/classical/paganini'
+    ],
+    [
+        'data/cocktail/duchin',
+        'data/cocktail/garner',
+        'data/cocktail/williams'
+    ],
+    [
+        'data/jazz/ellington',
+        'data/jazz/evans',
+        'data/jazz/mckenzie',
+        'data/jazz/tatum'
+    ],
+    [
+        'data/ragtime/blake',
+        'data/ragtime/johnson',
+        'data/ragtime/joplin',
+        'data/ragtime/lamb',
+        'data/ragtime/morton',
+        'data/ragtime/paull',
+        'data/ragtime/scott',
+        'data/ragtime/turpin',
+        'data/ragtime/wenrich'
+    ],
+    [
+        'data/classical/albeniz',
+        'data/classical/brahms',
+        'data/classical/chopin',
+        'data/classical/debussy',
+        'data/classical/liszt',
+        'data/classical/mendelssohn',
+        'data/classical/rachmaninoff',
+        'data/classical/ravel',
+        'data/classical/schubert',
+        'data/classical/scriabin',
+        'data/classical/shostakovich',
+        'data/classical/tchaikovsky'
+    ]
+]
+NUM_STYLES = sum(len(s) for s in STYLES)
 
 # Paths
 OUT_DIR = 'out'
