@@ -200,7 +200,7 @@ LEARNING_RATE = 1e-3
 # NUM_STYLES = len(STYLES)
 
 # DATA V6
-GENRE = ['baroque', 'classical', 'cocktail', 'jazz', 'ragtime', 'romantic']
+GENRE = ['baroque', 'classical', 'jazz', 'ragtime', 'romantic']
 STYLES = [
     [
         'data/baroque/bach',
@@ -215,11 +215,6 @@ STYLES = [
         'data/classical/haydn',
         'data/classical/mozart',
         'data/classical/paganini'
-    ],
-    [
-        'data/cocktail/duchin',
-        'data/cocktail/garner',
-        'data/cocktail/williams'
     ],
     [
         'data/jazz/ellington',
@@ -239,18 +234,18 @@ STYLES = [
         'data/ragtime/wenrich'
     ],
     [
-        'data/classical/albeniz',
-        'data/classical/brahms',
-        'data/classical/chopin',
-        'data/classical/debussy',
-        'data/classical/liszt',
-        'data/classical/mendelssohn',
-        'data/classical/rachmaninoff',
-        'data/classical/ravel',
-        'data/classical/schubert',
-        'data/classical/scriabin',
-        'data/classical/shostakovich',
-        'data/classical/tchaikovsky'
+        'data/romantic/albeniz',
+        'data/romantic/brahms',
+        'data/romantic/chopin',
+        'data/romantic/debussy',
+        'data/romantic/liszt',
+        'data/romantic/mendelssohn',
+        'data/romantic/rachmaninoff',
+        'data/romantic/ravel',
+        'data/romantic/schubert',
+        'data/romantic/scriabin',
+        'data/romantic/shostakovich',
+        'data/romantic/tchaikovsky'
     ]
 ]
 NUM_STYLES = sum(len(s) for s in STYLES)

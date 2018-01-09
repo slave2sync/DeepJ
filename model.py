@@ -40,14 +40,14 @@ class DeepJ(nn.Module):
         # style = self.style_linear(style)
         # GLOBAL STYLE
         style = F.tanh(self.style_layer(style))
-        style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units)
-        x = torch.cat((x, style), dim=2)
+        # style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units)
+        # x = torch.cat((x, style), dim=2)
 
         ## Process RNN ##
         if states is None:
             states = [None for _ in range(self.num_layers)]
 
-        x, states = self.rnn(x, states)
+        # x, states = self.rnn(x, states)
         # GLOBAL STYLE
         for l, rnn in enumerate(self.rnns):
             x, states[l] = rnn(x, states[l])
