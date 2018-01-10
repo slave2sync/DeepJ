@@ -18,18 +18,18 @@ class DeepJ(nn.Module):
 
         # RNN
         # GLOBAL STYLE
-        # self.rnns = [nn.LSTM((NUM_ACTIONS + style_units) if i == 0 else self.num_units, self.num_units, batch_first=True) for i in range(num_layers)]
-        self.rnn = nn.LSTM(NUM_ACTIONS + style_units, self.num_units, num_layers, batch_first=True)
+        self.rnns = [nn.LSTM((NUM_ACTIONS) if i == 0 else self.num_units, self.num_units, batch_first=True) for i in range(num_layers)]
+        # self.rnn = nn.LSTM(NUM_ACTIONS + style_units, self.num_units, num_layers, batch_first=True)
 
         self.output_linear = nn.Linear(self.num_units, NUM_ACTIONS)
 
         # GLOBAL STYLE
-        # for i, rnn in enumerate(self.rnns):
-        #     self.add_module('rnn_' + str(i), rnn)
+        for i, rnn in enumerate(self.rnns):
+            self.add_module('rnn_' + str(i), rnn)
 
         # Style
         self.style_linear = nn.Linear(NUM_STYLES, self.style_units) # NONGLOBAL STYLE
-        # self.style_layer = nn.Linear(self.style_units, self.num_units * self.num_layers) # GLOBAL STYLE
+        self.style_layer = nn.Linear(self.style_units, self.num_units * self.num_layers) # GLOBAL STYLE
 
     def forward(self, x, style, states=None):
         batch_size = x.size(0)
@@ -37,20 +37,21 @@ class DeepJ(nn.Module):
 
         # Distributed style representation
         style = self.style_linear(style) # NONGLOBAL STYLE
-        # style = F.tanh(self.style_layer(style)) # GLOBAL STYLE
-        style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units) # NONGLOBAL STYLE
-        x = torch.cat((x, style), dim=2) # NONGLOBAL STYLE
+        style = F.tanh(self.style_layer(style)) # GLOBAL STYLE
+        # style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units) # NONGLOBAL STYLE
+        # style = style.unsqueeze(1).expand(batch_size, seq_len, self.num_units * self.num_layers) # GLOBAL STYLE
+        # x = torch.cat((x, style), dim=2) # NONGLOBAL STYLE
 
         ## Process RNN ##
-        # if states is None:
-        #     states = [None for _ in range(self.num_layers)]
+        if states is None:
+            states = [None for _ in range(self.num_layers)]
 
-        x, states = self.rnn(x, states) # NONGLOBAL STYLE
+        # x, states = self.rnn(x, states) # NONGLOBAL STYLE
         # GLOBAL STYLE
-        # for l, rnn in enumerate(self.rnns):
-        #     x, states[l] = rnn(x, states[l])
+        for l, rnn in enumerate(self.rnns):
+            x, states[l] = rnn(x, states[l])
             # Style integration
-            # x = x * style[:, l * self.num_units:(l + 1) * self.num_units].unsqueeze(1).expand(-1, seq_len, -1)
+            x = x * style[:, l * self.num_units:(l + 1) * self.num_units].unsqueeze(1).expand(-1, seq_len, -1)
 
         x = self.output_linear(x)
         return x, states
