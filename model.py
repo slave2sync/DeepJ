@@ -28,18 +28,19 @@ class DeepJ(nn.Module):
             self.add_module('rnn_' + str(i), rnn)
 
         # Style
-        self.style_linear = nn.Linear(NUM_STYLES, self.style_units) # NONGLOBAL STYLE
-        self.style_layer = nn.Linear(self.style_units, self.num_units * self.num_layers) # GLOBAL STYLE
+        self.style_linear = nn.Linear(NUM_STYLES, self.style_units) # BOTH
+        self.style_layer = nn.Linear(self.style_units, self.num_units * self.num_layers) # BOTH
 
     def forward(self, x, style, states=None):
         batch_size = x.size(0)
         seq_len = x.size(1)
 
         # Distributed style representation
-        style = self.style_linear(style) # NONGLOBAL STYLE
-        style = F.tanh(self.style_layer(style)) # GLOBAL STYLE
+        style = self.style_linear(style) # BOTH
+        style = F.tanh(self.style_layer(style)) # BOTH
+        # L1 Regularization
+        style_reg = 0.01 * torch.sum(torch.abs(style))
         # style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units) # NONGLOBAL STYLE
-        # style = style.unsqueeze(1).expand(batch_size, seq_len, self.num_units * self.num_layers) # GLOBAL STYLE
         # x = torch.cat((x, style), dim=2) # NONGLOBAL STYLE
 
         ## Process RNN ##
@@ -54,11 +55,11 @@ class DeepJ(nn.Module):
             x = x + style[:, l * self.num_units:(l + 1) * self.num_units].unsqueeze(1).expand(-1, seq_len, -1)
 
         x = self.output_linear(x)
-        return x, states
+        return x, states, style_reg
 
     def generate(self, x, style, states, temperature=1):
         """ Returns the probability of outputs """
-        x, states = self.forward(x, style, states)
+        x, states, _ = self.forward(x, style, states)
         seq_len = x.size(1)
         x = x.view(-1, NUM_ACTIONS)
         # 2d matrix = softmax dim 1
