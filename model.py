@@ -38,8 +38,6 @@ class DeepJ(nn.Module):
         # Distributed style representation
         style = self.style_linear(style) # BOTH
         style = F.tanh(self.style_layer(style)) # BOTH
-        # L1 Regularization
-        style_reg = 0.01 * torch.sum(torch.abs(style))
         # style = style.unsqueeze(1).expand(batch_size, seq_len, self.style_units) # NONGLOBAL STYLE
         # x = torch.cat((x, style), dim=2) # NONGLOBAL STYLE
 
@@ -55,11 +53,11 @@ class DeepJ(nn.Module):
             x = x + style[:, l * self.num_units:(l + 1) * self.num_units].unsqueeze(1).expand(-1, seq_len, -1)
 
         x = self.output_linear(x)
-        return x, states, style_reg
+        return x, states
 
     def generate(self, x, style, states, temperature=1):
         """ Returns the probability of outputs """
-        x, states, _ = self.forward(x, style, states)
+        x, states = self.forward(x, style, states)
         seq_len = x.size(1)
         x = x.view(-1, NUM_ACTIONS)
         # 2d matrix = softmax dim 1

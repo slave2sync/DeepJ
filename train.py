@@ -135,7 +135,10 @@ def compute_loss(model, data, volatile=False):
     # Feed it to the model
     inputs = var(one_hot_seq(note_seq[:, :-1], NUM_ACTIONS), volatile=volatile)
     targets = var(note_seq[:, 1:], volatile=volatile)
-    output, _, style_reg = model(inputs, styles, None)
+    output, _ = model(inputs, styles, None)
+
+    # L1 regularization of style
+    style_reg = 0.01 * torch.sum(torch.abs(model.style_linear(styles)))
 
     # Compute the loss.
     loss = criterion(output.view(-1, NUM_ACTIONS), targets.view(-1)) + style_reg
