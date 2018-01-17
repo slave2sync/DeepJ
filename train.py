@@ -138,10 +138,10 @@ def compute_loss(model, data, volatile=False):
     output, _ = model(inputs, styles, None)
 
     # L1 regularization of style
-    style_reg = 0.01 * torch.sum(torch.abs(model.style_linear(styles)))
+    # style_reg = 0.01 * torch.sum(torch.abs(model.style_linear(styles)))
 
     # Compute the loss.
-    loss = criterion(output.view(-1, NUM_ACTIONS), targets.view(-1)) + style_reg
+    loss = criterion(output.view(-1, NUM_ACTIONS), targets.view(-1))
 
     return loss, loss.data[0]
 
