@@ -91,7 +91,7 @@ def sampler(data):
 
     def sample(seq_len):
         # Pick random sequence
-        seq_id = np.random.choice(len(seq_prob_list), 1, seq_prob_list)[0]
+        seq_id = np.random.choice(len(seq_prob_list), 1, p=seq_prob_list)[0]
         return (
             gen_to_tensor(augment(random_subseq(seqs[seq_id], seq_len))),
             # Need to retain the tensor object. Hence slicing is used.
