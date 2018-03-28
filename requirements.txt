@@ -1,5 +1,5 @@
-keras
-tensorflow-gpu
+keras==1.2.2
+tensorflow==1.2
 joblib
 tqdm
 h5py
