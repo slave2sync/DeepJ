@@ -82,13 +82,15 @@ def seq_to_midi(event_seq):
     return track_builder.export()
 
 def midi_to_seq(midi_file, track):
-    print('midi_to_seq:midi_file', midi_file)
-    print('midi_to_seq:Track {}: {}'.format(i, track.name)
-    #print('midi_to_seq:ticks_per_beat {}'.format(midi_file.ticks_per_beat))
-
     """
     Converts a MIDO track object into an event sequence
     """
+    print('=========================================================')
+    print('midi_to_seq:midi_file', midi_file)
+    print('midi_to_seq:Track {}: {}'.format(i, track.name)
+    print('midi_to_seq:ticks_per_beat {}'.format(midi_file.ticks_per_beat))
+    print('=========================================================')
+
     events = []
     tempo = None
     last_velocity = None
