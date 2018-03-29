@@ -85,7 +85,7 @@ def midi_to_seq(midi_file, track):
     print('**********************************')
     print('midi_to_seq:midi_file', midi_file)
     print('midi_to_seq:Track {}: {}'.format(i, track.name)
-    print('midi_to_seq:ticks_per_beat', midi_file.ticks_per_beat)
+    print('midi_to_seq:ticks_per_beat {}', midi_file.ticks_per_beat)
     print('**********************************')
 
     """
@@ -132,7 +132,7 @@ def load_midi(fname):
     print('load_midi: fname', fname)
 
     cache_path = os.path.join(CACHE_DIR, fname + '.npy')
-    print('load_midi: cache_path', cache_path)
+    print('load_midi: cache_path=', cache_path)
     try:
         print('load_midi: before np.load')
         seq = np.load(cache_path)
