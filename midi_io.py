@@ -123,19 +123,30 @@ def midi_to_seq(midi_file, track):
     return np.array(events)
 
 def load_midi(fname):
+    print('load_midi: fname', fname)
+
     cache_path = os.path.join(CACHE_DIR, fname + '.npy')
+    print('load_midi: cache_path', cache_path)
     try:
+        print('load_midi: before np.load')
         seq = np.load(cache_path)
+        print('load_midi: after np.load')
     except Exception as e:
         # Load
+        print('load_midi: before mido.MidiFile')
         mid = mido.MidiFile(fname)
+        print('load_midi: after mido.MidiFile')
         track = mido.merge_tracks(mid.tracks)
+        print('load_midi: after mido.merge_tracks')
         seq = midi_to_seq(mid, track)
-
+        print('load_midi: after midi_to_seq')
         # Perform caching
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        print('load_midi: after makedirs')
         np.save(cache_path, seq)
-    return seq
+        print('load_midi: after save(cache_path, seq)')
+
+        return seq
 
 def save_midi(fname, event_seq):
     """
