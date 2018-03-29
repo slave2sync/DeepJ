@@ -159,7 +159,6 @@ def main():
 
     if torch.cuda.is_available():
         model.cuda()
-
         if args.fp16:
             # Wrap forward method
             fwd = model.forward
@@ -171,7 +170,11 @@ def main():
         print('Restored model from checkpoint.')
 
     # Construct optimizer
-    param_copy = [param.clone().type(torch.cuda.FloatTensor).detach() for param in model.parameters()]
+    if torch.cuda.is_available():
+        param_copy = [param.clone().type(torch.cuda.FloatTensor).detach() for param in model.parameters()]
+    else:
+        param_copy = [param.clone().type(torch.FloatTensor).detach() for param in model.parameters()]
+    ##################################
     for param in param_copy:
         param.requires_grad = True
     optimizer = optim.Adam(param_copy, lr=args.lr, eps=1e-4)
