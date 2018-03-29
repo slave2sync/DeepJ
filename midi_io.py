@@ -82,6 +82,12 @@ def seq_to_midi(event_seq):
     return track_builder.export()
 
 def midi_to_seq(midi_file, track):
+    print('**********************************')
+    print('midi_to_seq:midi_file', midi_file)
+    print('midi_to_seq:Track {}: {}'.format(i, track.name)
+    print('midi_to_seq:ticks_per_beat', midi_file.ticks_per_beat)
+    print('**********************************')
+
     """
     Converts a MIDO track object into an event sequence
     """
@@ -133,13 +139,9 @@ def load_midi(fname):
         print('load_midi: after np.load')
     except Exception as e:
         # Load
-        print('load_midi: before mido.MidiFile')
         mid = mido.MidiFile(fname)
-        print('load_midi: after mido.MidiFile')
         track = mido.merge_tracks(mid.tracks)
-        print('load_midi: after mido.merge_tracks')
         seq = midi_to_seq(mid, track)
-        print('load_midi: after midi_to_seq')
         # Perform caching
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
         print('load_midi: after makedirs')
